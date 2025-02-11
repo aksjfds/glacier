@@ -1,54 +1,42 @@
 #![allow(unused)]
 
+use std::cell::RefCell;
 use std::ops::Add;
-use std::sync::Mutex;
-use std::{collections::HashMap, sync::LazyLock};
+use std::sync::LazyLock;
 
-use glacier::{bytes::Bytes, client::Glacier, request::Request};
+use glacier::response::Response;
+use glacier::{client::Glacier, request::Request};
 use glacier_macro::{glacier, main};
 
-struct Routes<T>
-where
-    T: Fn(Request) -> (),
-{
-    routes: Vec<T>,
-}
-
-impl<T> Routes<T>
-where
-    T: Fn(Request) -> (),
-{
-    pub fn new(routes: Vec<T>) -> Self {
-        Routes { routes }
-    }
-}
-
 #[glacier(GET, "/hello")]
-fn hello(req: Request) {
+fn hello(req: Request, mut res: Response) {
     println!("{:#?}", 1);
+    res.respond();
 }
 
 #[glacier(GET, "/byebye")]
-fn byebye(req: Request) {}
+fn byebye(req: Request, mut res: Response) {
+    res.respond();
+}
 
-// static XXX: LazyLock<u8> = LazyLock::new(|| {
-//     let lock = unsafe { GLACIER_GET.lock() };
-//     let mut lock = lock.unwrap();
-//     lock.insert("/hello", hello);
-//     1
-// });
+#[glacier(GET, "/")]
+fn default(req: Request, mut res: Response) {
+    println!("{:#?}", req);
+    res.respond();
+}
 
 #[main]
 fn main() {
-    // Glacier::bind(3000);
+    let mut client = Glacier::bind(3000).unwrap();
+    println!("{:#?}", "http://localhost:3000");
+    client.run();
+}
 
-    unsafe {
-        let lock = GLACIER_GET.lock().unwrap();
-        // let func = lock.get("/hello").unwrap();
-        // func(Request::new(&"value".to_string()));
-    }
+#[test]
+fn test() {
+    let b = RefCell::new(1);
+    // let a = b.borrow();
+    let mut c = b.borrow_mut();
 
-    for i in 1..1 {
-        println!("{:#?}", i);
-    }
+    *c = 10;
 }

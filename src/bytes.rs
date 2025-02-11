@@ -9,6 +9,7 @@ pub struct Bytes {
     ptr: NonNull<u8>,
     cap: usize,
     len: usize,
+    pos: usize,
 }
 impl Drop for Bytes {
     fn drop(&mut self) {
@@ -20,16 +21,34 @@ impl Drop for Bytes {
 }
 
 impl Bytes {
+    pub fn temp1(&mut self) -> &mut [u8] {
+        if self.cap - self.len < 32 {
+            self.grow();
+            self.temp1()
+        } else {
+            unsafe {
+                let ptr = self.ptr.as_ptr().add(self.len);
+                from_raw_parts_mut(ptr, 32)
+            }
+        }
+    }
+
+    pub fn temp2(&mut self, len: usize) {
+        self.len += len;
+    }
+}
+
+impl Bytes {
     pub fn with_capacity(cap: usize) -> Self {
         let layout = Layout::array::<u8>(cap).unwrap();
         let ptr = unsafe { alloc(layout) };
         let ptr = unsafe { NonNull::new_unchecked(ptr) };
-        Bytes { ptr, cap, len: 0 }
-    }
-
-    pub fn push(&mut self, val: u8) {
-        unsafe { self.ptr.add(self.len).write(val) };
-        self.len += 1;
+        Bytes {
+            ptr,
+            cap,
+            len: 0,
+            pos: 0,
+        }
     }
 
     pub fn grow(&mut self) {
@@ -83,6 +102,18 @@ impl Bytes {
         }
     }
 
+    pub fn parse_line(&self) -> Option<&[u8]> {
+        let slice = self.as_slice();
+        for pos in self.pos..self.len {
+            let temp = &[slice[pos], slice[pos + 1]];
+            if is_line(temp) {
+                return Some(&slice[self.pos..pos]);
+            }
+        }
+
+        return None;
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
@@ -101,12 +132,11 @@ pub fn is_line(slice: &[u8]) -> bool {
         }
     }
 }
+
 #[test]
 fn test() {
-    let mut buff = Bytes::with_capacity(10);
-    buff.push(10);
+    let a = [0; 10];
+    let b = unsafe { from_raw_parts(a.as_ptr(), 3) };
 
-    buff.push_slice("\r\n\r\n".as_bytes());
-
-    println!("{:#?}", buff.is_end());
+    println!("{:#?}", b);
 }

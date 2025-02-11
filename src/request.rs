@@ -1,5 +1,9 @@
 #![allow(unused)]
 
+use std::cell::RefMut;
+
+use crate::bytes::Bytes;
+
 #[derive(Debug)]
 pub struct Request<'a> {
     pub request_line: RequestLine<'a>,
@@ -16,7 +20,7 @@ pub enum RequestMethod {
 #[derive(Debug)]
 pub struct RequestLine<'a> {
     method: RequestMethod,
-    uri: &'a str,
+    pub uri: &'a str,
     version: &'a str,
 }
 
@@ -52,6 +56,13 @@ impl<'a> From<&'a str> for RequestLine<'a> {
             uri,
             version,
         }
+    }
+}
+
+impl<'a> From<&'a [u8]> for RequestLine<'a> {
+    fn from(value: &'a [u8]) -> Self {
+        let value = unsafe { std::str::from_utf8_unchecked(value) };
+        value.into()
     }
 }
 
@@ -92,6 +103,10 @@ impl<'a> From<&'a String> for Request<'a> {
 impl<'a> Request<'a> {
     pub fn new(value: &'a String) -> Self {
         value.into()
+    }
+
+    pub fn path(&self) -> &str {
+        self.request_line.uri
     }
 }
 

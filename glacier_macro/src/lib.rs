@@ -51,18 +51,21 @@ fn gen_glacier(ast: syn::ItemFn, args: Route) -> TokenStream {
     let id = unsafe { GLACIER_ID };
     unsafe { GLACIER_ID += 1 };
     let glacier_temp = format_ident!("GLACIER_TEMP_{}", id);
-
-    // 转换后的函数
-    let gen = quote! {
-
+    let stmt: Stmt = parse_quote! {
         static #glacier_temp: LazyLock<u8> = LazyLock::new(|| {
             let lock = unsafe { #method.lock() };
             let mut lock = lock.unwrap();
             lock.insert(#path, #func_name);
             1
         });
+    };
 
-        fn #func_name (#func_inputs)
+    // 转换后的函数
+    let gen = quote! {
+
+        #stmt
+
+        fn #func_name ( #func_inputs )
         {
             # (#func_body_stmts) *
         }
@@ -93,7 +96,7 @@ fn gen_main(ast: syn::ItemFn) -> TokenStream {
     for id in 0..ids {
         let ident = format_ident!("GLACIER_TEMP_{}", id);
         let stmt: Stmt = parse_quote! {
-            #ident.add(0);
+            drop(#ident.add(0));
         };
         block.stmts.push(stmt);
     }
@@ -101,7 +104,7 @@ fn gen_main(ast: syn::ItemFn) -> TokenStream {
     // 转换后的函数
     let gen = quote! {
 
-        static GLACIER_GET: LazyLock<Mutex<HashMap<&str, fn(Request<'_>)>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+        use glacier::GLACIER_GET;
 
         fn #func_name (#func_inputs)
         {

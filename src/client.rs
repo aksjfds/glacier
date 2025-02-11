@@ -1,57 +1,82 @@
 #![allow(unused)]
 
-use std::{
-    io::{Read, Write},
-    net::TcpListener,
-};
+use std::cell::{Ref, RefCell, RefMut};
+use std::collections::HashMap;
+use std::{io::Read, net::TcpListener};
 
-use crate::{bytes::Bytes, request::Request};
+use crate::request::RequestLine;
+use crate::{bytes::Bytes, request::Request, response::Response, GLACIER_GET};
+use crate::{error, Result};
 
 pub struct Glacier {
     listener: TcpListener,
-    request_buf: Bytes,
-    // route_func:Vec<>
+    request_buf: RefCell<Bytes>,
+    routes: HashMap<&'static str, fn(Request, Response)>,
 }
 
 impl Glacier {
-    pub fn bind(port: u16) -> Self {
-        let addr = format!("127.0.0.1:{}", port);
-        let listener = TcpListener::bind(addr).unwrap();
+    pub fn bind(port: u16) -> Result<Glacier> {
+        let routes = GLACIER_GET.lock().unwrap().clone();
 
-        Glacier {
+        let addr = ("127.0.0.1", port);
+        let listener = TcpListener::bind(addr).map_err(error::from_client)?;
+
+        Ok(Glacier {
             listener,
-            request_buf: Bytes::with_capacity(512),
-        }
+            request_buf: RefCell::new(Bytes::with_capacity(32)),
+            routes,
+        })
     }
 
-    pub fn run(&mut self) {
+    fn buf(&self) -> RefMut<'_, Bytes> {
+        self.request_buf.borrow_mut()
+    }
+
+    pub fn run(&self) {
         for stream in self.listener.incoming() {
-            let mut stream = stream.unwrap();
+            match stream {
+                Err(e) => {
+                    eprintln!("Failed to accept connection: {}", e);
+                }
+                Ok(mut stream) => {
+                    let mut buf = self.buf();
 
-            let mut buf = [0; 512]; // 读取固定大小的缓冲区
-            let request_buf = &mut self.request_buf;
+                    // 获取 request_line
+                    let path = 'block2: {
+                        while let Ok(len @ 1..) = stream.read(buf.temp1()) {
+                            buf.temp2(len);
 
-            while let Ok(len @ 1..) = stream.read(&mut buf) {
-                request_buf.push_slice(&buf[..len]);
-                if request_buf.is_end() {
-                    println!("{}", request_buf.to_string());
-                    break;
+                            if let Some(line) = buf.parse_line() {
+                                let line = RequestLine::from(line);
+                                break 'block2 line.uri;
+                            }
+                        }
+
+                        ""
+                    };
+
+                    // 获取路由
+                    if let Some(func) = self.routes.get(path) {
+                        // 获取完整 request
+                        while let Ok(len @ 1..) = stream.read(buf.temp1()) {
+                            buf.temp2(len);
+                            if buf.is_end() {
+                                break;
+                            }
+                        }
+
+                        // 组织
+                        let temp = buf.to_string();
+                        let req = Request::new(&temp);
+                        let res = Response::hello(stream);
+                        func(req, res);
+                    } else {
+                        Response::not_found(stream);
+                    }
                 }
             }
 
-            if !request_buf.is_empty() {
-                let request = Request::new(&request_buf.to_string());
-                // println!("{:#?}", request);
-            } else {
-                println!("{:#?}", "断开连接");
-            }
-
-            // 构造 HTTP 响应
-            let response = "HTTP/1.1 200 OK\r\nContent-Length: 13\r\n\r\nHello, world!";
-            stream.write_all(response.as_bytes());
-            stream.flush();
-
-            self.request_buf.clear();
+            self.buf().clear();
         }
     }
 }
