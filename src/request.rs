@@ -2,7 +2,8 @@
 
 use std::cell::RefMut;
 
-use crate::bytes::Bytes;
+use crate::Result;
+use crate::{bytes::Bytes, error::GlacierError};
 
 #[derive(Debug)]
 pub struct Request<'a> {
@@ -33,76 +34,97 @@ pub struct RequestHeader<'a> {
 #[derive(Debug)]
 pub struct RequestBody;
 
-impl From<&str> for RequestMethod {
-    fn from(value: &str) -> Self {
+impl TryFrom<&str> for RequestMethod {
+    type Error = GlacierError;
+
+    fn try_from(value: &str) -> Result<Self> {
         match value {
-            "GET" => RequestMethod::Get,
-            "POST" => RequestMethod::Post,
-            _ => todo!(),
+            "GET" => Ok(RequestMethod::Get),
+            "POST" => Ok(RequestMethod::Post),
+            _ => Err(GlacierError::FromRequest(String::from("解析请求方法出错"))),
         }
     }
 }
 
-impl<'a> From<&'a str> for RequestLine<'a> {
-    fn from(value: &'a str) -> Self {
+impl<'a> TryFrom<&'a str> for RequestLine<'a> {
+    type Error = GlacierError;
+
+    fn try_from(value: &'a str) -> Result<Self> {
         // GET /favicon.ico HTTP/1.1
         let mut value = value.split(" ");
-        let method = value.next().unwrap();
-        let uri = value.next().unwrap();
-        let version = value.next().unwrap();
 
-        RequestLine {
-            method: method.into(),
-            uri,
-            version,
+        if let [Some(method), Some(uri), Some(version)] = [value.next(), value.next(), value.next()]
+        {
+            Ok(RequestLine {
+                method: method.try_into()?,
+                uri,
+                version,
+            })
+        } else {
+            Err(GlacierError::FromRequest(String::from("解析请求行出错")))
         }
     }
 }
 
-impl<'a> From<&'a [u8]> for RequestLine<'a> {
-    fn from(value: &'a [u8]) -> Self {
+impl<'a> TryFrom<&'a [u8]> for RequestLine<'a> {
+    type Error = GlacierError;
+
+    fn try_from(value: &'a [u8]) -> Result<Self> {
         let value = unsafe { std::str::from_utf8_unchecked(value) };
-        value.into()
+        value.try_into()
     }
 }
 
-impl<'a> From<&'a str> for RequestHeader<'a> {
-    fn from(value: &'a str) -> Self {
+impl<'a> TryFrom<&'a str> for RequestHeader<'a> {
+    type Error = GlacierError;
+
+    fn try_from(value: &'a str) -> Result<Self> {
         // Host: localhost:3000
         let mut value = value.split(": ");
 
-        let (key, value) = match (value.next(), value.next()) {
-            (Some(key), Some(value)) => (key, value),
-            _ => ("", ""),
-        };
-
-        RequestHeader { key, value }
+        if let [Some(key), Some(value)] = [value.next(), value.next()] {
+            Ok(RequestHeader { key, value })
+        } else {
+            Err(GlacierError::FromRequest(String::from("解析请求头出错")))
+        }
     }
 }
 
-impl<'a> From<&'a String> for Request<'a> {
-    fn from(value: &'a String) -> Self {
+impl<'a> TryFrom<&'a String> for Request<'a> {
+    type Error = GlacierError;
+
+    fn try_from(value: &'a String) -> Result<Self> {
         let mut value = value.split("\r\n");
         let request_line = value.next().unwrap();
-        let request_line = request_line.into();
+        let request_line = request_line.try_into()?;
 
         let mut headers = Vec::new();
         for header in value {
-            headers.push(header.into());
+            if let Ok(header) = header.try_into() {
+                headers.push(header);
+            }
         }
         headers.pop();
 
-        Request {
+        Ok(Request {
             request_line,
             headers,
             body: None,
-        }
+        })
+    }
+}
+
+impl<'a> TryFrom<Bytes> for Request<'a> {
+    type Error = GlacierError;
+
+    fn try_from(value: Bytes) -> Result<Self> {
+        todo!()
     }
 }
 
 impl<'a> Request<'a> {
-    pub fn new(value: &'a String) -> Self {
-        value.into()
+    pub fn parse(value: &'a String) -> Result<Self> {
+        value.try_into()
     }
 
     pub fn path(&self) -> &str {
@@ -111,10 +133,12 @@ impl<'a> Request<'a> {
 }
 
 #[test]
-fn test() {
-    let a: RequestLine = "GET /favicon.ico HTTP/1.1".into();
+fn test() -> Result<()> {
+    let a: RequestLine = "GET /favicon.ico HTTP/1.1".try_into()?;
     println!("{:#?}", a);
 
-    let b: RequestHeader = "Host: localhost:3000".into();
+    let b: RequestHeader = "Host: localhost:3000".try_into()?;
     println!("{:#?}", b);
+
+    Ok(())
 }

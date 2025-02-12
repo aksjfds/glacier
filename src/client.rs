@@ -10,7 +10,7 @@ use crate::{error, Result};
 
 pub struct Glacier {
     listener: TcpListener,
-    request_buf: RefCell<Bytes>,
+    req_buf: RefCell<Bytes>,
     routes: HashMap<&'static str, fn(Request, Response)>,
 }
 
@@ -19,17 +19,17 @@ impl Glacier {
         let routes = GLACIER_GET.lock().unwrap().clone();
 
         let addr = ("127.0.0.1", port);
-        let listener = TcpListener::bind(addr).map_err(error::from_client)?;
+        let listener = TcpListener::bind(addr)?;
 
         Ok(Glacier {
             listener,
-            request_buf: RefCell::new(Bytes::with_capacity(32)),
+            req_buf: RefCell::new(Bytes::with_capacity(32)),
             routes,
         })
     }
 
     fn buf(&self) -> RefMut<'_, Bytes> {
-        self.request_buf.borrow_mut()
+        self.req_buf.borrow_mut()
     }
 
     pub fn run(&self) {
@@ -43,11 +43,11 @@ impl Glacier {
 
                     // 获取 request_line
                     let path = 'block2: {
-                        while let Ok(len @ 1..) = stream.read(buf.temp1()) {
-                            buf.temp2(len);
+                        while let Ok(len @ 1..) = stream.read(buf.get_free_space()) {
+                            buf.modify_len(len);
 
                             if let Some(line) = buf.parse_line() {
-                                let line = RequestLine::from(line);
+                                let line = RequestLine::try_from(line).unwrap();
                                 break 'block2 line.uri;
                             }
                         }
@@ -58,8 +58,8 @@ impl Glacier {
                     // 获取路由
                     if let Some(func) = self.routes.get(path) {
                         // 获取完整 request
-                        while let Ok(len @ 1..) = stream.read(buf.temp1()) {
-                            buf.temp2(len);
+                        while let Ok(len @ 1..) = stream.read(buf.get_free_space()) {
+                            buf.modify_len(len);
                             if buf.is_end() {
                                 break;
                             }
@@ -67,7 +67,7 @@ impl Glacier {
 
                         // 组织
                         let temp = buf.to_string();
-                        let req = Request::new(&temp);
+                        let req = Request::parse(&temp).unwrap();
                         let res = Response::hello(stream);
                         func(req, res);
                     } else {

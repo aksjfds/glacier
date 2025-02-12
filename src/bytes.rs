@@ -21,10 +21,10 @@ impl Drop for Bytes {
 }
 
 impl Bytes {
-    pub fn temp1(&mut self) -> &mut [u8] {
+    pub fn get_free_space(&mut self) -> &mut [u8] {
         if self.cap - self.len < 32 {
             self.grow();
-            self.temp1()
+            self.get_free_space()
         } else {
             unsafe {
                 let ptr = self.ptr.as_ptr().add(self.len);
@@ -33,7 +33,7 @@ impl Bytes {
         }
     }
 
-    pub fn temp2(&mut self, len: usize) {
+    pub fn modify_len(&mut self, len: usize) {
         self.len += len;
     }
 }
@@ -86,32 +86,7 @@ impl Bytes {
     }
 
     pub fn to_string(&self) -> String {
-        String::from_utf8_lossy(self.as_slice()).to_string()
-    }
-
-    pub fn is_end(&self) -> bool {
-        if self.len < 4 {
-            return false;
-        }
-
-        let end = &self.as_slice()[self.len - 4..];
-        if is_line(&end[..2]) && is_line(&end[2..]) {
-            true
-        } else {
-            false
-        }
-    }
-
-    pub fn parse_line(&self) -> Option<&[u8]> {
-        let slice = self.as_slice();
-        for pos in self.pos..self.len {
-            let temp = &[slice[pos], slice[pos + 1]];
-            if is_line(temp) {
-                return Some(&slice[self.pos..pos]);
-            }
-        }
-
-        return None;
+        unsafe { std::str::from_utf8_unchecked(self.as_slice()).to_string() }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -122,14 +97,38 @@ impl Bytes {
         self.len = 0;
     }
 }
-pub fn is_line(slice: &[u8]) -> bool {
-    if slice.len() != 2 {
-        false
-    } else {
-        match slice {
-            [b'\r', b'\n'] => true,
-            _ => false,
+
+impl Bytes {
+    pub fn is_end(&self) -> bool {
+        if self.len < 4 {
+            return false;
         }
+
+        let end = &self.as_slice()[self.len - 4..];
+        if is_lf(&end[..2]) && is_lf(&end[2..]) {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn parse_line(&self) -> Option<&[u8]> {
+        let slice = self.as_slice();
+        for pos in self.pos..self.len {
+            let temp = &[slice[pos], slice[pos + 1]];
+            if is_lf(temp) {
+                return Some(&slice[self.pos..pos]);
+            }
+        }
+
+        return None;
+    }
+}
+
+pub fn is_lf(slice: &[u8]) -> bool {
+    match slice {
+        b"\r\n" => true,
+        _ => false,
     }
 }
 
