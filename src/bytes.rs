@@ -1,6 +1,6 @@
 use std::{
     alloc::{alloc, dealloc, realloc, Layout},
-    ptr::{copy, NonNull},
+    ptr::NonNull,
     slice::{from_raw_parts, from_raw_parts_mut},
     usize,
 };
@@ -9,46 +9,17 @@ pub struct Bytes {
     ptr: NonNull<u8>,
     cap: usize,
     len: usize,
-    pos: usize,
-}
-impl Drop for Bytes {
-    fn drop(&mut self) {
-        if self.cap != 0 {
-            let layout = Layout::array::<u8>(self.cap).unwrap();
-            unsafe { dealloc(self.ptr.as_ptr(), layout) };
-        }
-    }
 }
 
-impl Bytes {
-    pub fn get_free_space(&mut self) -> &mut [u8] {
-        if self.cap - self.len < 32 {
-            self.grow();
-            self.get_free_space()
-        } else {
-            unsafe {
-                let ptr = self.ptr.as_ptr().add(self.len);
-                from_raw_parts_mut(ptr, 32)
-            }
-        }
-    }
-
-    pub fn modify_len(&mut self, len: usize) {
-        self.len += len;
-    }
-}
+unsafe impl Sync for Bytes {}
+unsafe impl Send for Bytes {}
 
 impl Bytes {
     pub fn with_capacity(cap: usize) -> Self {
         let layout = Layout::array::<u8>(cap).unwrap();
         let ptr = unsafe { alloc(layout) };
         let ptr = unsafe { NonNull::new_unchecked(ptr) };
-        Bytes {
-            ptr,
-            cap,
-            len: 0,
-            pos: 0,
-        }
+        Bytes { ptr, cap, len: 0 }
     }
 
     pub fn grow(&mut self) {
@@ -58,21 +29,6 @@ impl Bytes {
 
         self.ptr = NonNull::new(new_ptr).unwrap();
         self.cap *= 2;
-    }
-
-    pub fn push_slice(&mut self, slice: &[u8]) {
-        let slice_len = slice.len();
-
-        if slice_len + self.len < self.cap {
-            let self_ptr = unsafe { self.ptr.as_ptr().add(self.len) };
-            let slice_ptr = slice.as_ptr();
-            unsafe { copy(slice_ptr, self_ptr, slice_len) };
-
-            self.len += slice_len;
-        } else {
-            self.grow();
-            self.push_slice(slice);
-        }
     }
 
     pub fn as_slice(&self) -> &[u8] {
@@ -85,8 +41,12 @@ impl Bytes {
         unsafe { from_raw_parts_mut(ptr, self.len) }
     }
 
+    pub fn as_str(&self) -> &str {
+        unsafe { std::str::from_utf8_unchecked(self.as_slice()) }
+    }
+
     pub fn to_string(&self) -> String {
-        unsafe { std::str::from_utf8_unchecked(self.as_slice()).to_string() }
+        self.as_str().to_string()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -95,6 +55,46 @@ impl Bytes {
 
     pub fn clear(&mut self) {
         self.len = 0;
+    }
+}
+
+impl Drop for Bytes {
+    fn drop(&mut self) {
+        if self.cap != 0 {
+            let layout = Layout::array::<u8>(self.cap).unwrap();
+            unsafe { dealloc(self.ptr.as_ptr(), layout) };
+        }
+    }
+}
+
+impl Bytes {
+    pub fn get_32_space(&mut self) -> &mut [u8] {
+        if self.cap - self.len < 32 {
+            self.grow();
+            self.get_32_space()
+        } else {
+            unsafe {
+                let ptr = self.ptr.as_ptr().add(self.len);
+                from_raw_parts_mut(ptr, 32)
+            }
+        }
+    }
+
+    pub fn get_free_space(&mut self) -> &mut [u8] {
+        if self.cap - self.len < 32 {
+            self.grow();
+            self.get_free_space()
+        } else {
+            unsafe {
+                let ptr = self.ptr.as_ptr().add(self.len);
+                // from_raw_parts_mut(ptr, 32)
+                from_raw_parts_mut(ptr, self.cap - self.len)
+            }
+        }
+    }
+
+    pub fn modify_len(&mut self, len: usize) {
+        self.len += len;
     }
 }
 
@@ -112,16 +112,16 @@ impl Bytes {
         }
     }
 
-    pub fn parse_line(&self) -> Option<&[u8]> {
+    pub fn first_line(&self) -> Option<&[u8]> {
         let slice = self.as_slice();
-        for pos in self.pos..self.len {
+        for pos in 0..self.len {
             let temp = &[slice[pos], slice[pos + 1]];
             if is_lf(temp) {
-                return Some(&slice[self.pos..pos]);
+                return Some(&slice[0..pos]);
             }
         }
 
-        return None;
+        None
     }
 }
 

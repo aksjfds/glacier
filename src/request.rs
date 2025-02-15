@@ -1,7 +1,5 @@
 #![allow(unused)]
 
-use std::cell::RefMut;
-
 use crate::Result;
 use crate::{bytes::Bytes, error::GlacierError};
 
@@ -90,21 +88,26 @@ impl<'a> TryFrom<&'a str> for RequestHeader<'a> {
     }
 }
 
-impl<'a> TryFrom<&'a String> for Request<'a> {
+impl<'a> TryFrom<&'a Bytes> for Request<'a> {
     type Error = GlacierError;
 
-    fn try_from(value: &'a String) -> Result<Self> {
+    fn try_from(value: &'a Bytes) -> Result<Self> {
+        let value = value.as_str();
         let mut value = value.split("\r\n");
+
+        // 解析 request-line 一般不会出错
         let request_line = value.next().unwrap();
         let request_line = request_line.try_into()?;
 
+        // 解析 请求头
         let mut headers = Vec::new();
         for header in value {
             if let Ok(header) = header.try_into() {
                 headers.push(header);
             }
+            // headers.push(header.try_into()?);
         }
-        headers.pop();
+        // headers.pop();
 
         Ok(Request {
             request_line,
@@ -114,16 +117,8 @@ impl<'a> TryFrom<&'a String> for Request<'a> {
     }
 }
 
-impl<'a> TryFrom<Bytes> for Request<'a> {
-    type Error = GlacierError;
-
-    fn try_from(value: Bytes) -> Result<Self> {
-        todo!()
-    }
-}
-
 impl<'a> Request<'a> {
-    pub fn parse(value: &'a String) -> Result<Self> {
+    pub fn parse(value: &'a Bytes) -> Result<Self> {
         value.try_into()
     }
 

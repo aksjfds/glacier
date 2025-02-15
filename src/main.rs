@@ -1,29 +1,31 @@
-#![allow(unused)]
+// #![allow(unused)]
 
-use std::arch::x86_64;
-use std::cell::RefCell;
-use std::fs::File;
-use std::io::{BufReader, Read};
-use std::net::TcpStream;
-use std::ops::Add;
-use std::slice::from_raw_parts;
-use std::sync::LazyLock;
-use std::time;
+use std::{fs::File, io::Read, thread};
 
-use glacier::response::Response;
-use glacier::{client::Glacier, request::Request};
-use glacier_macro::{glacier, main};
+use glacier::prelude::*;
 
 #[glacier(GET, "/")]
-fn default(req: Request, mut res: Response) {
+fn hello(_req: Request, mut res: Response) {
     println!("{:#?}", "hello");
+
+    let mut f = File::open("../index.html").unwrap();
+    let mut data = String::new();
+    f.read_to_string(&mut data).unwrap();
+    res.body = data;
+
     res.respond();
 }
 
 #[main]
 fn main() {
-    let glacier = Glacier::bind(3000).unwrap();
+    let glacier = Glacier::bind(3000, routes).unwrap();
+
+    let handle = thread::spawn(move || glacier.run());
 
     println!("{:#?}", "http://localhost:3000");
-    glacier.run();
+
+    handle.join().unwrap();
 }
+
+#[test]
+fn test() {}

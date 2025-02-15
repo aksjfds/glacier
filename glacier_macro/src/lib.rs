@@ -2,14 +2,14 @@
 
 extern crate proc_macro;
 
+use std::sync::{LazyLock, Mutex};
+
 use proc_macro::TokenStream;
-use quote::{format_ident, quote};
-use syn::{
-    parse::{Parse, ParseStream},
-    parse_quote,
-    token::Comma,
-    Block, Stmt,
-};
+use quote::{quote, ToTokens};
+use syn::parse::{Parse, ParseStream};
+use syn::parse_quote;
+use syn::token::Comma;
+use syn::Stmt;
 
 // #[glacier(GET, "/")]
 struct Route {
@@ -27,6 +27,22 @@ impl Parse for Route {
     }
 }
 
+//////////////////////////////
+
+static STMTS: LazyLock<Mutex<Vec<String>>> = LazyLock::new(|| {
+    let mut stmts = Vec::new();
+
+    let first_stmt: Stmt = parse_quote! {
+        let mut routes = Routes::new();
+    };
+
+    let first_stmt = first_stmt.to_token_stream().to_string();
+    stmts.push(first_stmt);
+
+    Mutex::new(stmts)
+});
+//////////////////////////////
+
 #[proc_macro_attribute]
 pub fn glacier(args: TokenStream, input: TokenStream) -> TokenStream {
     // 解析函数声明
@@ -36,7 +52,6 @@ pub fn glacier(args: TokenStream, input: TokenStream) -> TokenStream {
     gen_glacier(ast, args)
 }
 
-static mut GLACIER_ID: u8 = 0;
 fn gen_glacier(ast: syn::ItemFn, args: Route) -> TokenStream {
     // 原函数的 ast 结构
     let func_name = ast.sig.ident;
@@ -44,34 +59,25 @@ fn gen_glacier(ast: syn::ItemFn, args: Route) -> TokenStream {
     let func_body_stmts = ast.block.stmts;
 
     // 宏标记接收到的参数
-    let method = args.method;
-    let method = format_ident!("GLACIER_{}", method);
+    let _method = args.method;
     let path = args.path;
 
     // 临时变量用于 insert
-    let id = unsafe { GLACIER_ID };
-    unsafe { GLACIER_ID += 1 };
-    let glacier_temp = format_ident!("GLACIER_TEMP_{}", id);
     let stmt: Stmt = parse_quote! {
-        static #glacier_temp: LazyLock<u8> = LazyLock::new(|| {
-            let lock = unsafe { #method.lock() };
-            let mut lock = lock.unwrap();
-            lock.insert(#path, #func_name);
-            1
-        });
+        routes.add(#path, #func_name);
     };
+    let stmt = stmt.to_token_stream().to_string();
+    STMTS.lock().unwrap().push(stmt);
 
     // 转换后的函数
     let gen = quote! {
 
-        #stmt
-
-        fn #func_name ( #func_inputs )
+        fn #func_name (#func_inputs)
         {
             # (#func_body_stmts) *
         }
-    };
 
+    };
     gen.into()
 }
 
@@ -90,26 +96,22 @@ fn gen_main(ast: syn::ItemFn) -> TokenStream {
     let func_body_stmts = ast.block.stmts;
 
     // 处理临时变量
-    let mut block: Block = parse_quote! {
-        {}
-    };
-    let ids = unsafe { GLACIER_ID };
-    for id in 0..ids {
-        let ident = format_ident!("GLACIER_TEMP_{}", id);
-        let stmt: Stmt = parse_quote! {
-            drop(#ident.add(0));
-        };
-        block.stmts.push(stmt);
-    }
+
+    let stmts = STMTS.lock().unwrap().clone();
+    let stmts: Vec<Stmt> = stmts
+        .into_iter()
+        .map(|stmt| {
+            let stmt = syn::parse_str(&stmt).unwrap();
+            stmt
+        })
+        .collect();
 
     // 转换后的函数
     let gen = quote! {
 
-        use glacier::GLACIER_GET;
-
         fn #func_name (#func_inputs)
         {
-            #block
+            # (#stmts) *
 
             # (#func_body_stmts) *
         }

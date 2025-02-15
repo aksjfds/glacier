@@ -3,17 +3,19 @@ pub mod client;
 pub mod error;
 pub mod request;
 pub mod response;
+pub mod route;
+pub mod prelude;
 //
 //
 //
-use request::Request;
-use response::Response;
-use std::{
-    collections::HashMap,
-    sync::{LazyLock, Mutex},
-};
-pub static GLACIER_GET: LazyLock<Mutex<HashMap<&str, fn(Request<'_>, Response)>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+// use request::Request;
+// use response::Response;
+// use std::{
+//     collections::HashMap,
+//     sync::{LazyLock, Mutex},
+// };
+// pub static GLACIER_GET: LazyLock<Mutex<HashMap<&str, fn(Request<'_>, Response)>>> =
+//     LazyLock::new(|| Mutex::new(HashMap::new()));
 //
 //
 //
