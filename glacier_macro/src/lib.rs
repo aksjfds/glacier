@@ -12,18 +12,18 @@ use syn::token::Comma;
 use syn::Stmt;
 
 // #[glacier(GET, "/")]
-struct Route {
+struct RouteArgs {
     method: syn::Ident,
     path: syn::LitStr,
 }
 
-impl Parse for Route {
+impl Parse for RouteArgs {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let method = input.parse()?;
         let _comma: Comma = input.parse()?;
         let path = input.parse()?;
 
-        Ok(Route { method, path })
+        Ok(RouteArgs { method, path })
     }
 }
 
@@ -47,12 +47,12 @@ static STMTS: LazyLock<Mutex<Vec<String>>> = LazyLock::new(|| {
 pub fn glacier(args: TokenStream, input: TokenStream) -> TokenStream {
     // 解析函数声明
     let ast = syn::parse_macro_input!(input as syn::ItemFn);
-    let args = syn::parse_macro_input!(args as Route);
+    let args = syn::parse_macro_input!(args as RouteArgs);
 
     gen_glacier(ast, args)
 }
 
-fn gen_glacier(ast: syn::ItemFn, args: Route) -> TokenStream {
+fn gen_glacier(ast: syn::ItemFn, args: RouteArgs) -> TokenStream {
     // 原函数的 ast 结构
     let func_name = ast.sig.ident;
     let func_inputs = ast.sig.inputs;

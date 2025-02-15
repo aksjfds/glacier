@@ -10,6 +10,9 @@ pub struct Routes {
     inner: HashMap<&'static str, F>,
 }
 
+unsafe impl Sync for Routes {}
+unsafe impl Send for Routes {}
+
 impl Routes {
     pub fn new() -> Self {
         Routes {
