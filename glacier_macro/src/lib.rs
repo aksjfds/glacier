@@ -1,4 +1,4 @@
-// #![allow(unused)]
+#![allow(unused)]
 
 extern crate proc_macro;
 
@@ -7,9 +7,9 @@ use std::sync::{LazyLock, Mutex};
 use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
 use syn::parse::{Parse, ParseStream};
-use syn::parse_quote;
 use syn::token::Comma;
 use syn::Stmt;
+use syn::{parse_quote, Arm};
 
 // #[glacier(GET, "/")]
 struct RouteArgs {
@@ -30,14 +30,7 @@ impl Parse for RouteArgs {
 //////////////////////////////
 
 static STMTS: LazyLock<Mutex<Vec<String>>> = LazyLock::new(|| {
-    let mut stmts = Vec::new();
-
-    let first_stmt: Stmt = parse_quote! {
-        let mut routes = Routes::new();
-    };
-
-    let first_stmt = first_stmt.to_token_stream().to_string();
-    stmts.push(first_stmt);
+    let stmts = Vec::new();
 
     Mutex::new(stmts)
 });
@@ -54,6 +47,7 @@ pub fn glacier(args: TokenStream, input: TokenStream) -> TokenStream {
 
 fn gen_glacier(ast: syn::ItemFn, args: RouteArgs) -> TokenStream {
     // 原函数的 ast 结构
+    let func_async = ast.sig.asyncness.unwrap();
     let func_name = ast.sig.ident;
     let func_inputs = ast.sig.inputs;
     let func_body_stmts = ast.block.stmts;
@@ -62,20 +56,25 @@ fn gen_glacier(ast: syn::ItemFn, args: RouteArgs) -> TokenStream {
     let _method = args.method;
     let path = args.path;
 
-    // 临时变量用于 insert
-    let stmt: Stmt = parse_quote! {
-        routes.add(#path, #func_name);
+    // match 分支
+    let arm: syn::Arm = parse_quote! {
+        #path => {
+            let task = async {
+                # (#func_body_stmts) *
+            };
+            task.await;
+        }
     };
-    let stmt = stmt.to_token_stream().to_string();
-    STMTS.lock().unwrap().push(stmt);
+    let arm = arm.into_token_stream().to_string();
+    STMTS.lock().unwrap().push(arm);
 
     // 转换后的函数
     let gen = quote! {
 
-        fn #func_name (#func_inputs)
-        {
-            # (#func_body_stmts) *
-        }
+        // #func_async fn #func_name (#func_inputs)
+        // {
+        //     # (#func_body_stmts) *
+        // }
 
     };
     gen.into()
@@ -91,28 +90,46 @@ pub fn main(_args: TokenStream, input: TokenStream) -> TokenStream {
 
 fn gen_main(ast: syn::ItemFn) -> TokenStream {
     // 原函数的 ast 结构
+    let func_async = &ast.sig.asyncness.unwrap();
     let func_name = &ast.sig.ident;
     let func_inputs = ast.sig.inputs;
     let func_body_stmts = ast.block.stmts;
 
-    // 处理临时变量
-
-    let stmts = STMTS.lock().unwrap().clone();
-    let stmts: Vec<Stmt> = stmts
+    // 处理 match
+    let arms = STMTS.lock().unwrap().clone();
+    let mut arms: Vec<Arm> = arms
         .into_iter()
         .map(|stmt| {
             let stmt = syn::parse_str(&stmt).unwrap();
             stmt
         })
         .collect();
+    arms.push(parse_quote! {
+        _ => {
+            let mut not_found = Response::from(res).await;
+            not_found.respond().await;
+        }
+    });
+
+    let mut match_expr: syn::ExprMatch = parse_quote! {
+        match path {}
+    };
+    match_expr.arms = arms;
+    let routes_func: syn::ItemFn = parse_quote! {
+        async fn routes(mut req: Request, mut res: Response) {
+            let path = req.path();
+            #match_expr
+        }
+    };
 
     // 转换后的函数
     let gen = quote! {
 
-        fn #func_name (#func_inputs)
-        {
-            # (#stmts) *
+        #routes_func
 
+        #[tokio::main]
+        #func_async fn #func_name (#func_inputs)
+        {
             # (#func_body_stmts) *
         }
     };

@@ -4,9 +4,9 @@ use crate::Result;
 use crate::{bytes::Bytes, error::GlacierError};
 
 #[derive(Debug)]
-pub struct Request<'a> {
-    pub request_line: RequestLine<'a>,
-    pub headers: Vec<RequestHeader<'a>>,
+pub struct Request {
+    pub request_line: RequestLine,
+    pub headers: Vec<RequestHeader>,
     pub body: Option<RequestBody>,
 }
 
@@ -17,16 +17,16 @@ pub enum RequestMethod {
 }
 
 #[derive(Debug)]
-pub struct RequestLine<'a> {
+pub struct RequestLine {
     method: RequestMethod,
-    pub uri: &'a str,
-    version: &'a str,
+    pub uri: String,
+    version: String,
 }
 
 #[derive(Debug)]
-pub struct RequestHeader<'a> {
-    key: &'a str,
-    value: &'a str,
+pub struct RequestHeader {
+    key: String,
+    value: String,
 }
 
 #[derive(Debug)]
@@ -44,7 +44,7 @@ impl TryFrom<&str> for RequestMethod {
     }
 }
 
-impl<'a> TryFrom<&'a str> for RequestLine<'a> {
+impl<'a> TryFrom<&'a str> for RequestLine {
     type Error = GlacierError;
 
     fn try_from(value: &'a str) -> Result<Self> {
@@ -55,8 +55,8 @@ impl<'a> TryFrom<&'a str> for RequestLine<'a> {
         {
             Ok(RequestLine {
                 method: method.try_into()?,
-                uri,
-                version,
+                uri: String::from(uri),
+                version: String::from(version),
             })
         } else {
             Err(GlacierError::FromRequest(String::from("解析请求行出错")))
@@ -64,7 +64,7 @@ impl<'a> TryFrom<&'a str> for RequestLine<'a> {
     }
 }
 
-impl<'a> TryFrom<&'a [u8]> for RequestLine<'a> {
+impl<'a> TryFrom<&'a [u8]> for RequestLine {
     type Error = GlacierError;
 
     fn try_from(value: &'a [u8]) -> Result<Self> {
@@ -73,7 +73,7 @@ impl<'a> TryFrom<&'a [u8]> for RequestLine<'a> {
     }
 }
 
-impl<'a> TryFrom<&'a str> for RequestHeader<'a> {
+impl<'a> TryFrom<&'a str> for RequestHeader {
     type Error = GlacierError;
 
     fn try_from(value: &'a str) -> Result<Self> {
@@ -81,14 +81,17 @@ impl<'a> TryFrom<&'a str> for RequestHeader<'a> {
         let mut value = value.split(": ");
 
         if let [Some(key), Some(value)] = [value.next(), value.next()] {
-            Ok(RequestHeader { key, value })
+            Ok(RequestHeader {
+                key: String::from(key),
+                value: String::from(value),
+            })
         } else {
             Err(GlacierError::FromRequest(String::from("解析请求头出错")))
         }
     }
 }
 
-impl<'a> TryFrom<&'a Bytes> for Request<'a> {
+impl<'a> TryFrom<&'a Bytes> for Request {
     type Error = GlacierError;
 
     fn try_from(value: &'a Bytes) -> Result<Self> {
@@ -117,13 +120,19 @@ impl<'a> TryFrom<&'a Bytes> for Request<'a> {
     }
 }
 
-impl<'a> Request<'a> {
+impl<'a> Request {
     pub fn parse(value: &'a Bytes) -> Result<Self> {
         value.try_into()
     }
 
     pub fn path(&self) -> &str {
-        self.request_line.uri
+        self.request_line.uri.as_str()
+    }
+}
+
+impl RequestLine {
+    pub fn uri(&self) -> &str {
+        self.uri.as_str()
     }
 }
 

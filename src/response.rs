@@ -1,6 +1,8 @@
 #![allow(unused)]
 
-use std::{collections::HashMap, io::Write, net::TcpStream};
+use std::{collections::HashMap, io::Write};
+
+use tokio::{io::AsyncWriteExt, net::TcpStream};
 
 pub struct Response {
     response_line: String,
@@ -23,7 +25,15 @@ impl Response {
         }
     }
 
-    pub fn not_found(mut stream: TcpStream) {
+    pub async fn from(mut res: Response) -> Response {
+        res.response_line = String::from("HTTP/1.1 404 Not Found\r\n");
+        res.body = String::from("<html><body><h1>404 - Not Found</h1>\
+                 <p>The page you are looking for might have been removed, had its name changed, or is temporarily unavailable.</p></body></html>");
+
+        res
+    }
+
+    pub async fn not_found(mut stream: TcpStream) {
         let response = b"HTTP/1.1 404 Not Found\r\n\
                  Content-Type: text/html; charset=UTF-8\r\n\
                  Content-Length: 113\r\n\
@@ -31,20 +41,20 @@ impl Response {
                  <html><body><h1>404 - Not Found</h1>\
                  <p>The page you are looking for might have been removed, had its name changed, or is temporarily unavailable.</p></body></html>";
 
-        if let Ok(_) = stream.write_all(response) {}
-        if let Ok(_) = stream.flush() {}
+        if let Ok(_) = stream.write_all(response).await {}
+        if let Ok(_) = stream.flush().await {}
     }
 
-    pub fn bad_request(mut stream: TcpStream) {
+    pub async fn bad_request(mut stream: TcpStream) {
         println!("{:#?}", 1);
         let response = b"HTTP/1.1 400 Bad Request\r\n\r\n";
-        stream.write_all(response).unwrap();
-        stream.flush().unwrap();
+        stream.write_all(response).await;
+        stream.flush().await;
         // if let Ok(_) = stream.write_all(response) {}
         // if let Ok(_) = stream.flush() {}
     }
 
-    pub fn respond(&mut self) {
+    pub async fn respond(&mut self) {
         let mut res = String::new();
 
         // 响应行
@@ -67,7 +77,7 @@ impl Response {
         res.push_str("\r\n");
         res.push_str(self.body.as_str());
 
-        self.stream.write_all(res.as_bytes()).unwrap();
-        self.stream.flush().unwrap();
+        self.stream.write_all(res.as_bytes()).await;
+        self.stream.flush().await;
     }
 }
