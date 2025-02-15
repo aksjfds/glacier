@@ -3,6 +3,9 @@ name = "glacier"
 version = "0.1.0"
 edition = "2021"
 
+[profile.release]
+debug = true
+
 [dependencies]
 glacier_macro = { path = "glacier_macro" }
 thiserror = "2.0.11"

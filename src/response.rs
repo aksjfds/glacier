@@ -54,7 +54,7 @@ impl Response {
         // if let Ok(_) = stream.flush() {}
     }
 
-    pub async fn respond(&mut self) {
+    pub async fn respond(mut self) {
         let mut res = String::new();
 
         // 响应行
