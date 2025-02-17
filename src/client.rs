@@ -1,10 +1,10 @@
-// #![allow(unused)]
-
 use std::future::Future;
 
+use futures::future::join_all;
 use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream};
 
+use crate::my_future::PollStream;
 use crate::Result;
 use crate::{bytes::Bytes, request::Request, response::Response};
 
@@ -28,13 +28,27 @@ where
         Ok(Glacier { listener, routes })
     }
 
-    pub async fn run(&self) -> Result<()> {
+    pub async fn run(self) -> Result<()> {
         let routes = self.routes;
+        let listener = self.listener;
+
+        let mut poll_stream = PollStream::with_capacity(64, listener);
 
         loop {
-            let (stream, _) = self.listener.accept().await?;
+            let streams = poll_stream.poll_some().await;
 
-            tokio::spawn(Glacier::handle_connection(stream, routes));
+            let streams: Vec<_> = streams
+                .into_iter()
+                .filter_map(|item| match item {
+                    Ok((stream, _)) => Some(Glacier::handle_connection(stream, routes)),
+                    Err(e) => {
+                        eprintln!("{}", e);
+                        None
+                    }
+                })
+                .collect();
+
+            tokio::spawn(join_all(streams));
         }
     }
 

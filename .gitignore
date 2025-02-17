@@ -1,1 +1,4 @@
 /target
+largefile.txt
+perf.data
+flamegraph.svg

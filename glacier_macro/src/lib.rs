@@ -47,7 +47,7 @@ pub fn glacier(args: TokenStream, input: TokenStream) -> TokenStream {
 
 fn gen_glacier(ast: syn::ItemFn, args: RouteArgs) -> TokenStream {
     // 原函数的 ast 结构
-    let func_async = ast.sig.asyncness.unwrap();
+    let func_async = ast.sig.asyncness.expect("no async signature");
     let func_name = ast.sig.ident;
     let func_inputs = ast.sig.inputs;
     let func_body_stmts = ast.block.stmts;
@@ -59,6 +59,7 @@ fn gen_glacier(ast: syn::ItemFn, args: RouteArgs) -> TokenStream {
     // match 分支
     let arm: syn::Arm = parse_quote! {
         #path => {
+            // println!("{:#?}", #path);
             let task = async {
                 # (#func_body_stmts) *
             };
@@ -71,10 +72,10 @@ fn gen_glacier(ast: syn::ItemFn, args: RouteArgs) -> TokenStream {
     // 转换后的函数
     let gen = quote! {
 
-        // #func_async fn #func_name (#func_inputs)
-        // {
-        //     # (#func_body_stmts) *
-        // }
+        #func_async fn #func_name (#func_inputs)
+        {
+            # (#func_body_stmts) *
+        }
 
     };
     gen.into()
@@ -106,6 +107,7 @@ fn gen_main(ast: syn::ItemFn) -> TokenStream {
         .collect();
     arms.push(parse_quote! {
         _ => {
+            // println!("{:#?}", "_");
             let mut not_found = Response::from(res).await;
             not_found.respond().await;
         }

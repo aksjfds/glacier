@@ -15,3 +15,7 @@
 # 7. client 应当持有一个 缓存区, 这样就不需要总是创建新的 Bytes (ok)
 
 # 8. 解析请求出错了咋办; run 函数中途或 func 函数中途对方断开连接咋办 (ok)
+
+# TODO a. 研究 listener.poll_accept() 以尝试 join! 多个连接.
+# b. 研究 futures 的 join_all 和 MaybeDone, 看看别人是怎么防止重复 `poll` 的 
+# TODO c. 用 join 技术来开发 send_file 方法

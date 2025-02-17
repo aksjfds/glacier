@@ -1,0 +1,49 @@
+wrk -t10 -c500 -d10s --latency http://localhost:3000
+
+1. join 64个连接版本
+Running 10s test @ http://localhost:3000
+  10 threads and 500 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     5.10ms    1.09ms  20.06ms   71.06%
+    Req/Sec     9.50k   694.25    18.05k    86.87%
+  Latency Distribution
+     50%    5.09ms
+     75%    5.82ms
+     90%    6.39ms
+     99%    7.51ms
+  950256 requests in 10.10s, 47.12MB read
+  Socket errors: connect 0, read 950197, write 0, timeout 0
+Requests/sec:  94079.52
+Transfer/sec:      4.67MB
+
+2. join 两个连接版本
+Running 10s test @ http://localhost:3000
+  10 threads and 500 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     6.70ms  454.08us  12.55ms   79.64%
+    Req/Sec     7.34k   308.00     9.47k    86.20%
+  Latency Distribution
+     50%    6.70ms
+     75%    6.93ms
+     90%    7.16ms
+     99%    7.89ms
+  730590 requests in 10.02s, 36.23MB read
+  Socket errors: connect 0, read 730579, write 0, timeout 0
+Requests/sec:  72927.92
+Transfer/sec:      3.62MB
+
+3. 单纯 tokio::spawn 版本
+Running 10s test @ http://localhost:3000
+  10 threads and 500 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     7.34ms  775.99us  18.31ms   94.45%
+    Req/Sec     6.74k   653.22    18.42k    94.91%
+  Latency Distribution
+     50%    7.36ms
+     75%    7.58ms
+     90%    7.80ms
+     99%    9.01ms
+  671547 requests in 10.10s, 33.30MB read
+  Socket errors: connect 0, read 671513, write 0, timeout 0
+Requests/sec:  66488.35
+Transfer/sec:      3.30MB
