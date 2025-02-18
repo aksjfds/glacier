@@ -1,36 +1,30 @@
 #![allow(unused)]
 
-use std::{fs::File, io::Read};
+use std::{io::Write, time};
 use tokio::fs::File as AsyncFile;
 
 use glacier::prelude::*;
+
+// #[glacier(GET, "/1")]
+// async fn file1(_req: Request, mut res: Response) {
+//     let start = time::Instant::now();
+//     match AsyncFile::open("/home/aksjfds/codes/glacier/largefile.txt").await {
+//         Ok(f) => {
+//             res.send_file(f).await.unwrap();
+//         }
+//         Err(e) => println!("{:#?}", e),
+//     }
+
+//     println!("传输耗时: {:#?}ms", start.elapsed().as_millis());
+// }
 
 #[glacier(GET, "/")]
 async fn basic(req: Request, res: Response) {
     // println!("{:#?}", "hello");
 
-    // hello(req, res).await;
+    // println!("{:#?}", req.headers.last().unwrap());
+
     res.respond().await;
-}
-
-#[glacier(GET, "/1")]
-async fn file1(_req: Request, mut res: Response) {
-    let mut f = File::open("../readme.md").unwrap();
-    let mut data = String::new();
-    f.read_to_string(&mut data);
-
-    res.body = data;
-    res.respond().await;
-}
-
-#[glacier(GET, "/2")]
-async fn file2(_req: Request, mut res: Response) {
-    match AsyncFile::open("../largefile.txt").await {
-        Ok(f) => {
-            res.send_file(f).await;
-        }
-        Err(e) => println!("{:#?}", e),
-    }
 }
 
 #[main]

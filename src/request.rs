@@ -1,7 +1,9 @@
 #![allow(unused)]
 
+use tokio::io::AsyncBufReadExt;
+
+use crate::error::GlacierError;
 use crate::Result;
-use crate::{bytes::Bytes, error::GlacierError};
 
 #[derive(Debug)]
 pub struct Request {
@@ -78,39 +80,50 @@ impl<'a> TryFrom<&'a str> for RequestHeader {
 
     fn try_from(value: &'a str) -> Result<Self> {
         // Host: localhost:3000
-        let mut value = value.split(": ");
+        let pos = value.find(":").unwrap();
+        let (key, value) = (&value[..pos], &value[pos + 2..]);
 
-        if let [Some(key), Some(value)] = [value.next(), value.next()] {
-            Ok(RequestHeader {
-                key: String::from(key),
-                value: String::from(value),
-            })
-        } else {
-            Err(GlacierError::FromRequest(String::from("解析请求头出错")))
-        }
+        Ok(RequestHeader {
+            key: String::from(key),
+            value: String::from(value),
+        })
     }
 }
 
-impl<'a> TryFrom<&'a Bytes> for Request {
+impl TryFrom<String> for RequestHeader {
     type Error = GlacierError;
 
-    fn try_from(value: &'a Bytes) -> Result<Self> {
-        let value = value.as_str();
-        let mut value = value.split("\r\n");
+    fn try_from(value: String) -> Result<Self> {
+        let pos = value.find(":").unwrap();
+        let (key, value) = (&value[..pos], &value[pos + 2..]);
+
+        Ok(RequestHeader {
+            key: String::from(key),
+            value: String::from(value),
+        })
+    }
+}
+
+impl<'a> TryFrom<Vec<u8>> for Request {
+    type Error = GlacierError;
+
+    fn try_from(value: Vec<u8>) -> Result<Self> {
+        let value = unsafe { String::from_utf8_unchecked(value) };
+        let mut lines = value.lines();
 
         // 解析 request-line 一般不会出错
-        let request_line = value.next().unwrap();
+        let request_line = lines.next().unwrap();
         let request_line = request_line.try_into()?;
 
         // 解析 请求头
         let mut headers = Vec::new();
-        for header in value {
-            if let Ok(header) = header.try_into() {
-                headers.push(header);
+        while let Some(line) = lines.next() {
+            if line.is_empty() {
+                break;
             }
-            // headers.push(header.try_into()?);
+
+            headers.push(RequestHeader::try_from(line)?);
         }
-        // headers.pop();
 
         Ok(Request {
             request_line,
@@ -121,12 +134,42 @@ impl<'a> TryFrom<&'a Bytes> for Request {
 }
 
 impl<'a> Request {
-    pub fn parse(value: &'a Bytes) -> Result<Self> {
+    pub fn parse(value: Vec<u8>) -> Result<Self> {
         value.try_into()
     }
 
     pub fn path(&self) -> &str {
         self.request_line.uri.as_str()
+    }
+
+    pub async fn parse_from_vec(vec: Vec<u8>) -> Result<Self> {
+        let mut lines = vec.lines();
+
+        let request_line = match lines.next_line().await? {
+            Some(line) => RequestLine::try_from(line.as_str())?,
+            None => {
+                return Err(GlacierError::FromRequest(String::from(
+                    "lines is already None",
+                )))
+            }
+        };
+
+        let mut headers = Vec::new();
+        while let Some(line) = lines.next_line().await? {
+            if line.is_empty() {
+                break;
+            }
+            headers.push(RequestHeader::try_from(line)?);
+        }
+
+        // TODO 处理请求体
+        // let body=
+
+        Ok(Request {
+            request_line,
+            headers,
+            body: None,
+        })
     }
 }
 
@@ -143,6 +186,22 @@ fn test() -> Result<()> {
 
     let b: RequestHeader = "Host: localhost:3000".try_into()?;
     println!("{:#?}", b);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test2() -> Result<()> {
+    let a = b"xxx\r\nxxxxd\r\nddddddd\r\naaaaaaa\r\n";
+    let a = a.to_vec();
+
+    let mut a = a.lines();
+    println!("{:#?}", a.next_line().await.unwrap().unwrap());
+
+    let a = a.into_inner();
+    unsafe {
+        println!("{:#?}", String::from_utf8_unchecked(a.to_vec()));
+    }
 
     Ok(())
 }

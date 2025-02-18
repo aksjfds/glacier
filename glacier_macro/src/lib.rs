@@ -51,6 +51,11 @@ fn gen_glacier(ast: syn::ItemFn, args: RouteArgs) -> TokenStream {
     let func_name = ast.sig.ident;
     let func_inputs = ast.sig.inputs;
     let func_body_stmts = ast.block.stmts;
+    let func_output = ast.sig.output;
+    
+    let syn::ReturnType::Default = func_output else {
+        panic!("the return type should be ()")
+    };
 
     // 宏标记接收到的参数
     let _method = args.method;

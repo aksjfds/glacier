@@ -47,3 +47,19 @@ Running 10s test @ http://localhost:3000
   Socket errors: connect 0, read 671513, write 0, timeout 0
 Requests/sec:  66488.35
 Transfer/sec:      3.30MB
+
+4. 在1基础上改进handle_connection后
+Running 10s test @ http://localhost:3000
+  10 threads and 500 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     4.76ms    0.97ms  12.52ms   68.21%
+    Req/Sec    10.15k   797.19    20.68k    85.56%
+  Latency Distribution
+     50%    4.76ms
+     75%    5.44ms
+     90%    5.95ms
+     99%    6.95ms
+  1013908 requests in 10.10s, 50.28MB read
+  Socket errors: connect 0, read 1013845, write 0, timeout 0
+Requests/sec: 100388.95
+Transfer/sec:      4.98MB

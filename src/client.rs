@@ -1,12 +1,11 @@
 use std::future::Future;
 
-use futures::future::join_all;
 use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::my_future::PollStream;
+use crate::my_future::{MyFuture, MyFutureTasks, PollStream};
 use crate::Result;
-use crate::{bytes::Bytes, request::Request, response::Response};
+use crate::{request::Request, response::Response};
 
 type Routes<T> = fn(Request, Response) -> T;
 
@@ -40,7 +39,9 @@ where
             let streams: Vec<_> = streams
                 .into_iter()
                 .filter_map(|item| match item {
-                    Ok((stream, _)) => Some(Glacier::handle_connection(stream, routes)),
+                    Ok((stream, _)) => {
+                        Some(MyFuture::new(Glacier::handle_connection(stream, routes)))
+                    }
                     Err(e) => {
                         eprintln!("{}", e);
                         None
@@ -48,32 +49,39 @@ where
                 })
                 .collect();
 
-            tokio::spawn(join_all(streams));
+            let tasks = MyFutureTasks::new(streams);
+            tokio::spawn(tasks);
         }
     }
 
     async fn handle_connection(mut stream: TcpStream, routes: Routes<T>) {
-        let mut buf = Bytes::with_capacity(1024);
+        let mut buf = Vec::with_capacity(1024);
 
         // 获取完整 request
         loop {
-            match stream.read(buf.get_free_space()).await {
+            match stream.read_buf(&mut buf).await {
                 Err(e) => {
                     eprintln!("Error reading from stream: {}", e);
                 }
                 Ok(0) => {
-                    // stream.shutdown(std::net::Shutdown::Both);
+                    if let Ok(0) = stream.read_buf(&mut buf).await {
+                        return;
+                    }
                 }
-                Ok(len) => buf.modify_len(len),
+                _ => {}
             }
 
-            if buf.is_end() {
+            if buf.ends_with(b"\r\n") {
                 break;
             }
         }
 
+        // unsafe {
+        //     println!("{:#?}", String::from_utf8_unchecked(buf.clone()));
+        // }
+
         // 整理
-        let req = match Request::parse(&buf) {
+        let req = match Request::parse(buf.to_vec()) {
             Ok(req) => req,
             Err(e) => {
                 eprintln!("Error when parsing request: {}", e);
@@ -86,4 +94,12 @@ where
         let func = routes(req, res);
         func.await;
     }
+}
+
+#[test]
+fn test() {
+    use std::io::Write;
+
+    let mut a = std::net::TcpStream::connect("www.localhost:3000").unwrap();
+    a.write_all(b"").unwrap();
 }
