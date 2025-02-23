@@ -1,13 +1,20 @@
-use std::future::Future;
+#![allow(unused)]
 
-use tokio::io::AsyncReadExt;
+use bytes::Buf;
+use std::future::Future;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::my_future::{MyFuture, MyFutureTasks, PollStream};
-use crate::Result;
-use crate::{request::Request, response::Response};
-
-type Routes<T> = fn(Request, Response) -> T;
+use crate::prelude::*;
+use crate::stream::glacier_stream::{GlacierStream, OneRequest};
+///
+///
+///
+///
+///
+///
+type Routes<T> = (fn(OneRequest) -> T, fn(&str) -> bool);
 
 pub struct Glacier<T> {
     listener: TcpListener,
@@ -54,52 +61,47 @@ where
         }
     }
 
-    async fn handle_connection(mut stream: TcpStream, routes: Routes<T>) {
-        let mut buf = Vec::with_capacity(1024);
+    async fn handle_connection(mut stream: TcpStream, routes: Routes<T>) -> Result<()> {
+        let (route, match_route) = routes;
 
-        // 获取完整 request
-        loop {
-            match stream.read_buf(&mut buf).await {
-                Err(e) => {
-                    eprintln!("Error reading from stream: {}", e);
-                }
-                Ok(0) => {
-                    if let Ok(0) = stream.read_buf(&mut buf).await {
-                        return;
-                    }
-                }
-                _ => {}
-            }
+        let mut glacier_stream = GlacierStream::new(stream);
+        glacier_stream.init().await.unwrap();
 
-            if buf.ends_with(b"\r\n") {
-                break;
-            }
+        let one_req = glacier_stream.build_request().unwrap();
+
+        /* --------------------------------- // 判断路径 -------------------------------- */
+        if !match_route(one_req.path()) {
+            println!("路径不存在: {:#?}", one_req.path());
+            return Ok(());
         }
 
-        // unsafe {
-        //     println!("{:#?}", String::from_utf8_unchecked(buf.clone()));
-        // }
-
-        // 整理
-        let req = match Request::parse(buf.to_vec()) {
-            Ok(req) => req,
-            Err(e) => {
-                eprintln!("Error when parsing request: {}", e);
-                Response::bad_request(stream).await;
-                return;
-            }
-        };
-
-        let res = Response::hello(stream);
-        let func = routes(req, res);
+        /* ----------------------------------- // ----------------------------------- */
+        let func = route(one_req);
         func.await;
+
+        Ok(())
     }
 }
 
 #[test]
-fn test() {
+fn test1() {
     use std::io::Write;
 
     let mut a = std::net::TcpStream::connect("www.localhost:3000").unwrap();
-    a.write_all(b"").unwrap();
+    a.write_all(b"GET / HTTP/1.1\r\n1:11").unwrap();
+}
+
+#[tokio::test]
+async fn test2() {
+    use futures::future::join_all;
+    use tokio::io::AsyncWriteExt;
+
+    let tasks: Vec<_> = (0..1000)
+        .map(|_i| async {
+            let mut stream = TcpStream::connect("www.localhost:3000").await.unwrap();
+            stream.write_all(b"").await.unwrap();
+        })
+        .collect();
+
+    join_all(tasks).await;
 }

@@ -63,3 +63,49 @@ Running 10s test @ http://localhost:3000
   Socket errors: connect 0, read 1013845, write 0, timeout 0
 Requests/sec: 100388.95
 Transfer/sec:      4.98MB
+
+5. version: "async 1.2.1 0.1M QPS", cargo run --release
+Running 10s test @ http://localhost:3000
+  10 threads and 500 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     2.41ms    1.21ms  13.34ms   73.28%
+    Req/Sec    12.92k   686.37    17.06k    78.60%
+  Latency Distribution
+     50%    2.26ms
+     75%    3.05ms
+     90%    3.93ms
+     99%    6.08ms
+  1286064 requests in 10.02s, 63.78MB read
+  Socket errors: connect 0, read 1285988, write 0, timeout 0
+Requests/sec: 128327.52
+Transfer/sec:      6.36MB
+
+Running 10s test @ http://localhost:3000
+  10 threads and 500 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     2.70ms    1.71ms  25.54ms   75.55%
+    Req/Sec    11.98k     2.01k   17.81k    76.10%
+  Latency Distribution
+     50%    2.32ms
+     75%    3.33ms
+     90%    4.98ms
+     99%    8.43ms
+  1192763 requests in 10.02s, 59.15MB read
+  Socket errors: connect 0, read 1192674, write 0, timeout 0
+Requests/sec: 118997.57
+Transfer/sec:      5.90MB
+
+Running 10s test @ http://localhost:3000
+  10 threads and 500 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     2.18ms    1.09ms  13.40ms   71.93%
+    Req/Sec    13.36k   670.49    17.36k    74.30%
+  Latency Distribution
+     50%    2.07ms
+     75%    2.77ms
+     90%    3.54ms
+     99%    5.42ms
+  1329727 requests in 10.02s, 65.94MB read
+  Socket errors: connect 0, read 1329658, write 0, timeout 0
+Requests/sec: 132766.09
+Transfer/sec:      6.58MB

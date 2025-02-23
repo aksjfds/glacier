@@ -7,6 +7,12 @@ pub enum GlacierError {
     #[error(transparent)]
     FromClient(#[from] std::io::Error),
 
-    #[error("error when parsing Request: {0}")]
-    FromRequest(String),
+    #[error("{0}")]
+    FromRequest(&'static str),
+
+    #[error("{0}")]
+    Option(&'static str),
+
+    #[error(transparent)]
+    Utf8Error(#[from] std::str::Utf8Error),
 }

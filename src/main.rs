@@ -1,35 +1,29 @@
 #![allow(unused)]
 
-use std::{io::Write, time};
-use tokio::fs::File as AsyncFile;
+use std::{io::Write, mem::transmute, ptr::read, time};
+use tokio::{fs::File as AsyncFile, net::TcpStream};
 
-use glacier::prelude::*;
-
-// #[glacier(GET, "/1")]
-// async fn file1(_req: Request, mut res: Response) {
-//     let start = time::Instant::now();
-//     match AsyncFile::open("/home/aksjfds/codes/glacier/largefile.txt").await {
-//         Ok(f) => {
-//             res.send_file(f).await.unwrap();
-//         }
-//         Err(e) => println!("{:#?}", e),
-//     }
-
-//     println!("传输耗时: {:#?}ms", start.elapsed().as_millis());
-// }
+use glacier::{prelude::*, stream::glacier_stream::OneRequest};
 
 #[glacier(GET, "/")]
-async fn basic(req: Request, res: Response) {
+async fn basic(req: OneRequest) {
+    // println!("{:#?}", "hello");
+
+    // println!("{:#?}", req.query_header("Host"));
+
+    req.respond().await;
+}
+
+#[glacier(POST, "/post")]
+async fn basic_post(req: OneRequest) {
     // println!("{:#?}", "hello");
 
     // println!("{:#?}", req.headers.last().unwrap());
-
-    res.respond().await;
 }
 
 #[main]
 async fn main() {
-    let glacier = Glacier::bind(3000, routes).await.unwrap();
+    let glacier = Glacier::bind(3000, (routes, match_route)).await.unwrap();
 
     println!("{:#?}", "http://localhost:3000");
     glacier.run().await.unwrap();

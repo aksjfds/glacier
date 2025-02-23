@@ -7,6 +7,7 @@ edition = "2021"
 debug = true
 
 [dependencies]
+bytes = "1.10.0"
 futures = "0.3.31"
 glacier_macro = { path = "glacier_macro" }
 thiserror = "2.0.11"

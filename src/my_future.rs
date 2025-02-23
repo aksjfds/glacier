@@ -5,6 +5,8 @@ use std::{
     task::{Context, Poll},
 };
 
+use crate::Result;
+use std::result::Result as StdResult;
 use tokio::net::{TcpListener, TcpStream};
 
 pub struct PollStream {
@@ -17,13 +19,13 @@ impl PollStream {
         PollStream { listener, capacity }
     }
 
-    pub async fn poll_some(&mut self) -> Vec<Result<(TcpStream, SocketAddr), std::io::Error>> {
-        unsafe { Pin::new_unchecked(self).await }
+    pub fn poll_some(&mut self) -> Pin<&mut PollStream> {
+        unsafe { Pin::new_unchecked(self) }
     }
 }
 
 impl Future for PollStream {
-    type Output = Vec<Result<(TcpStream, SocketAddr), std::io::Error>>;
+    type Output = Vec<StdResult<(TcpStream, SocketAddr), std::io::Error>>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut streams = Vec::with_capacity(self.capacity);
@@ -42,12 +44,12 @@ impl Future for PollStream {
     }
 }
 
-pub struct MyFuture<F: Future<Output = ()>> {
+pub struct MyFuture<F: Future<Output = Result<()>>> {
     f: F,
     done: bool,
 }
 
-impl<F: Future<Output = ()>> MyFuture<F> {
+impl<F: Future<Output = Result<()>>> MyFuture<F> {
     pub fn new(f: F) -> Self {
         MyFuture { f, done: false }
     }
@@ -57,7 +59,7 @@ impl<F: Future<Output = ()>> MyFuture<F> {
     }
 }
 
-impl<F: Future<Output = ()>> Future for MyFuture<F> {
+impl<F: Future<Output = Result<()>>> Future for MyFuture<F> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -78,17 +80,17 @@ impl<F: Future<Output = ()>> Future for MyFuture<F> {
     }
 }
 
-pub struct MyFutureTasks<F: Future<Output = ()>> {
+pub struct MyFutureTasks<F: Future<Output = Result<()>>> {
     tasks: Vec<MyFuture<F>>,
 }
 
-impl<F: Future<Output = ()>> MyFutureTasks<F> {
+impl<F: Future<Output = Result<()>>> MyFutureTasks<F> {
     pub fn new(tasks: Vec<MyFuture<F>>) -> Self {
         MyFutureTasks { tasks }
     }
 }
 
-impl<F: Future<Output = ()>> Future for MyFutureTasks<F> {
+impl<F: Future<Output = Result<()>>> Future for MyFutureTasks<F> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
