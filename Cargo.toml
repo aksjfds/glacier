@@ -10,5 +10,4 @@ debug = true
 bytes = "1.10.0"
 futures = "0.3.31"
 glacier_macro = { path = "glacier_macro" }
-thiserror = "2.0.11"
 tokio = { version = "1.43.0", features = ["full"] }

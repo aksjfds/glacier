@@ -6,11 +6,10 @@ use tokio::{fs::File as AsyncFile, net::TcpStream};
 use glacier::{prelude::*, stream::glacier_stream::OneRequest};
 
 #[glacier(GET, "/")]
-async fn basic(req: OneRequest) {
+async fn basic(mut req: OneRequest) {
     // println!("{:#?}", "hello");
 
     // println!("{:#?}", req.query_header("Host"));
-
     req.respond().await;
 }
 

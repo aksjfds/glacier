@@ -43,7 +43,7 @@ impl RequestLine {
             ])
         } else {
             println!("{:#?}", request_line);
-            Err(GlacierError::FromRequest("解析请求行出错"))
+            Err(GlacierError::build_req("解析请求行出错"))
         }
     }
 }
@@ -60,7 +60,7 @@ impl RequestHeader {
         if let [Some(key), Some(value)] = [split.next(), split.next()] {
             Ok([line[0], line[0] + key.len(), line[1]])
         } else {
-            Err(GlacierError::FromRequest("请求头格式错误"))
+            Err(GlacierError::build_req("请求头格式错误"))
         }
     }
 }

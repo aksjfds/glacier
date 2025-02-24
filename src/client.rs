@@ -2,9 +2,14 @@
 
 use bytes::Buf;
 use std::future::Future;
+use std::net::SocketAddrV4;
+use std::str::FromStr;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
+use crate::error::{GlacierError, Kind};
 use crate::my_future::{MyFuture, MyFutureTasks, PollStream};
 use crate::prelude::*;
 use crate::stream::glacier_stream::{GlacierStream, OneRequest};
@@ -20,13 +25,13 @@ pub struct Glacier<T> {
     listener: TcpListener,
     routes: Routes<T>,
 }
-unsafe impl<T> Sync for Glacier<T> {}
-unsafe impl<T> Send for Glacier<T> {}
 
+static R: AtomicU64 = AtomicU64::new(0);
 impl<T> Glacier<T>
 where
-    T: Future<Output = ()> + Send + Sync + 'static,
+    T: Future<Output = OneRequest> + Send + Sync + 'static,
 {
+    /* ---------------------------------- // 绑定 --------------------------------- */
     pub async fn bind(port: u16, routes: Routes<T>) -> Result<Glacier<T>> {
         let addr = ("127.0.0.1", port);
         let listener = TcpListener::bind(addr).await?;
@@ -34,55 +39,63 @@ where
         Ok(Glacier { listener, routes })
     }
 
+    /* ---------------------------------- // 运行 --------------------------------- */
     pub async fn run(self) -> Result<()> {
         let routes = self.routes;
         let listener = self.listener;
 
-        let mut poll_stream = PollStream::with_capacity(64, listener);
+        let srv = async move {
+            loop {
+                let (stream, _) = listener.accept().await?;
 
-        loop {
-            let streams = poll_stream.poll_some().await;
+                // R.fetch_add(1, Ordering::Relaxed);
+                // println!("{:#?}", R.load(Ordering::Relaxed));
 
-            let streams: Vec<_> = streams
-                .into_iter()
-                .filter_map(|item| match item {
-                    Ok((stream, _)) => {
-                        Some(MyFuture::new(Glacier::handle_connection(stream, routes)))
-                    }
-                    Err(e) => {
-                        eprintln!("{}", e);
-                        None
-                    }
-                })
-                .collect();
+                tokio::spawn(Glacier::handle_connection(stream, routes));
+            }
+            crate::Result::Ok(())
+        };
 
-            let tasks = MyFutureTasks::new(streams);
-            tokio::spawn(tasks);
-        }
+        tokio::spawn(srv).await;
+
+        Ok(())
     }
 
+    /* --------------------------------- // 处理连接 -------------------------------- */
     async fn handle_connection(mut stream: TcpStream, routes: Routes<T>) -> Result<()> {
         let (route, match_route) = routes;
 
         let mut glacier_stream = GlacierStream::new(stream);
-        glacier_stream.init().await.unwrap();
+        loop {
+            let mut one_req = match glacier_stream.to_req().await {
+                Ok(one_req) => one_req,
+                Err(e) => {
+                    if !matches!(e.kind(), Kind::EofErr) {
+                        println!("{:#?}", e);
+                    }
+                    return Ok(());
+                }
+            };
+            /* --------------------------------- // 判断路径 -------------------------------- */
+            if !match_route(one_req.path()) {
+                // println!("路径不存在: {:#?}", one_req.path());
+                return Ok(());
+            }
 
-        let one_req = glacier_stream.build_request().unwrap();
-
-        /* --------------------------------- // 判断路径 -------------------------------- */
-        if !match_route(one_req.path()) {
-            println!("路径不存在: {:#?}", one_req.path());
-            return Ok(());
+            /* ----------------------------------- // ----------------------------------- */
+            one_req = route(one_req).await;
+            glacier_stream = one_req.to_stream();
         }
-
-        /* ----------------------------------- // ----------------------------------- */
-        let func = route(one_req);
-        func.await;
-
         Ok(())
     }
 }
-
+//
+//
+//
+//
+//
+//
+/* --------------------------------- // test -------------------------------- */
 #[test]
 fn test1() {
     use std::io::Write;

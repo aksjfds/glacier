@@ -1,7 +1,7 @@
 pub mod client;
 pub mod error;
-pub mod prelude;
 pub mod my_future;
+pub mod prelude;
 pub mod stream;
 //
 //

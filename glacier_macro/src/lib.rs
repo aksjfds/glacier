@@ -127,9 +127,11 @@ fn gen_main(ast: syn::ItemFn) -> TokenStream {
     };
     match_expr.arms = arms;
     let routes_func: syn::ItemFn = parse_quote! {
-        async fn routes(mut req: OneRequest) {
+        async fn routes(mut req: OneRequest) -> OneRequest {
             let path = req.path();
             #match_expr
+
+            req
         }
     };
 
