@@ -1,3 +1,10 @@
+#![allow(unused)]
+
+use std::{collections::HashMap, sync::LazyLock};
+
+use dashmap::DashMap;
+use tokio::sync::RwLock;
+
 pub mod client;
 pub mod error;
 pub mod my_future;
@@ -18,6 +25,14 @@ pub mod stream;
 //
 //
 pub type Result<T> = core::result::Result<T, error::GlacierError>;
+pub static FILES_BUF: LazyLock<DashMap<String, String>> = LazyLock::new(|| DashMap::new());
+////
+///
+///
+///
+///
+///
+
 //
 //
 //

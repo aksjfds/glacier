@@ -1,29 +1,34 @@
 #![allow(unused)]
 
-use std::{io::Write, mem::transmute, ptr::read, time};
-use tokio::{fs::File as AsyncFile, net::TcpStream};
+use std::{io::Read, sync::RwLock};
 
-use glacier::{prelude::*, stream::glacier_stream::OneRequest};
+use bytes::BytesMut;
+use glacier::prelude::*;
 
 #[glacier(GET, "/")]
 async fn basic(mut req: OneRequest) {
-    // println!("{:#?}", "hello");
-
-    // println!("{:#?}", req.query_header("Host"));
-    req.respond().await;
+    req.respond_hello().await;
 }
 
-#[glacier(POST, "/post")]
-async fn basic_post(req: OneRequest) {
-    // println!("{:#?}", "hello");
+#[glacier(POST, "/hello")]
+async fn hello(mut req: OneRequest) {
+    println!("{:#?}", req.last_path());
+    req.respond_hello().await;
 
     // println!("{:#?}", req.headers.last().unwrap());
 }
 
+#[glacier(Static, "/public")]
+async fn public(mut req: OneRequest) {}
+
 #[main]
 async fn main() {
-    let glacier = Glacier::bind(3000, (routes, match_route)).await.unwrap();
-
+    let glacier = Glacier::bind(3000, routes).await.unwrap();
     println!("{:#?}", "http://localhost:3000");
-    glacier.run().await.unwrap();
+    glacier
+        .register_dir("/public")
+        .unwrap()
+        .run()
+        .await
+        .unwrap();
 }
