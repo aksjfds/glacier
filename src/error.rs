@@ -1,10 +1,4 @@
-#![allow(unused)]
-
-use std::{
-    error::Error as StdError,
-    fmt::{Debug, Pointer},
-    str::Utf8Error,
-};
+use std::{error::Error as StdError, fmt::Debug, str::Utf8Error};
 
 use tokio::time::error::Elapsed;
 

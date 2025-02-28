@@ -1,9 +1,6 @@
-#![allow(unused)]
-
-use std::{collections::HashMap, sync::LazyLock};
+use std::sync::LazyLock;
 
 use dashmap::DashMap;
-use tokio::sync::RwLock;
 
 pub mod client;
 pub mod error;
