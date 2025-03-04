@@ -1,7 +1,13 @@
 pub use crate::client::Glacier;
+pub use crate::config::GlacierBuilder;
 pub use crate::error::{GlacierError, Kind};
-pub use crate::stream::glacier_stream::GlacierStream;
+pub use crate::middles::ip_middle::ip_middle;
+pub(crate) use crate::stream::glacier_stream::GlacierStream;
 pub use crate::stream::request::OneRequest;
+pub use crate::stream::response::ContentType;
+pub use crate::stream::response::Response;
+pub use crate::stream::response::ResponseBuilder;
 pub use crate::Result;
-pub use crate::FILES_BUF;
+pub use crate::Routes;
+pub use crate::{CONTAIN_PATH, DIR_PATH, FILES_BUF, IP};
 pub use glacier_macro::{glacier, main};

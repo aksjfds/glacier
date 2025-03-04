@@ -5,7 +5,8 @@ use tokio::time::error::Elapsed;
 //
 //
 //
-
+//
+//
 impl Debug for GlacierError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let None = self.source {
@@ -33,6 +34,7 @@ pub enum Kind {
     UTF8Error,
     TimeOutErr,
     EofErr,
+    Option,
 }
 
 impl GlacierError {
@@ -61,6 +63,10 @@ impl GlacierError {
 
     pub(crate) fn build_eof(description: &'static str) -> GlacierError {
         GlacierError::new(Kind::EofErr, description, None)
+    }
+
+    pub(crate) fn build_option(description: &'static str) -> GlacierError {
+        GlacierError::new(Kind::Option, description, None)
     }
 }
 

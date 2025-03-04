@@ -1,12 +1,11 @@
-#![allow(unused)]
-
-use crate::prelude::*;
-use std::{sync::atomic::AtomicU64, time::Duration};
+// #![allow(unused)]
 
 use bytes::BytesMut;
+use std::{net::IpAddr, time::Duration};
 use tokio::{io::AsyncReadExt, net::TcpStream, time::timeout};
 
 use super::request::{RequestHeader, RequestLine};
+use crate::prelude::{GlacierError, OneRequest, Result};
 
 ///
 ///
@@ -14,34 +13,33 @@ use super::request::{RequestHeader, RequestLine};
 ///
 
 /* ---------------------------- // GlacierStream ---------------------------- */
-pub struct GlacierStream {
+pub(crate) struct GlacierStream {
     pub(crate) stream: TcpStream,
+    pub(crate) addr: IpAddr,
     pub(crate) buf: BytesMut,
 }
 
-static R: AtomicU64 = AtomicU64::new(0);
-
 impl GlacierStream {
-    pub fn new(stream: TcpStream) -> Self {
+    pub(crate) fn new(stream: (TcpStream, IpAddr)) -> Self {
         GlacierStream {
-            stream,
+            stream: stream.0,
+            addr: stream.1,
             buf: BytesMut::with_capacity(1024),
         }
     }
 
     // 读取 请求行 和 请求头 的全部数据
-    pub async fn read(&mut self) -> Result<Vec<usize>> {
+    pub(crate) async fn read(&mut self) -> Result<Vec<usize>> {
         /* --------------------------------- // 准备工作 -------------------------------- */
         let mut buf = &mut self.buf;
         let mut pos = Vec::with_capacity(10);
         buf.clear();
         pos.push(0);
+
         // 读取数据到buf, 然后标记buf上的位置
         loop {
             let len = timeout(Duration::from_secs(10), self.stream.read_buf(&mut buf)).await??;
             if 0 == len {
-                // R.fetch_add(1, Ordering::Relaxed);
-                // println!("close: {:#?}", R.load(Ordering::Relaxed));
                 Err(GlacierError::build_eof("Connection close"))?
             }
 
@@ -72,7 +70,7 @@ impl GlacierStream {
         Ok(pos)
     }
 
-    pub async fn to_req(mut self) -> Result<OneRequest> {
+    pub(crate) async fn to_req(mut self) -> Result<OneRequest> {
         let pos = self.read().await?;
         let mut lines = pos
             .as_slice()
@@ -93,6 +91,7 @@ impl GlacierStream {
 
         Ok(OneRequest {
             stream: self.stream,
+            addr: self.addr,
             buf: self.buf,
             request_line_pos,
             request_headers_pos,
