@@ -1,6 +1,6 @@
 use bytes::Bytes;
 use serde::Deserialize;
-use std::io::Read;
+use std::{io::Read, str::FromStr};
 
 use crate::prelude::{Glacier, Routes, DIR_PATH, FILES_BUF};
 //
@@ -35,10 +35,22 @@ struct Resources {
     assets: String,
 }
 
+fn default_logging_level() -> String {
+    String::from("info")
+}
+
+#[derive(Debug, Deserialize)]
+struct Logging {
+    #[serde(default = "default_logging_level")]
+    level: String,
+    file_path: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 struct GlacierConfig {
     server: Server,
     resources: Resources,
+    logging: Option<Logging>,
 }
 
 impl GlacierConfig {
@@ -113,6 +125,8 @@ impl<T> GlacierBuilder<T> {
     /// glacier.run().await.unwrap();
     /// ```
     pub fn register_dir(self, dir_path: &'static str) -> Self {
+        tracing::info!(dir_path, "loading static resources");
+
         unsafe { DIR_PATH = dir_path };
 
         let entries = std::fs::read_dir(&dir_path[1..]).unwrap();
@@ -122,10 +136,53 @@ impl<T> GlacierBuilder<T> {
             let file_path = entry.path().to_string_lossy().to_string();
             let mut f = std::fs::File::open(entry.path()).unwrap();
 
-            let mut buf = String::with_capacity(1024);
-            f.read_to_string(&mut buf).unwrap();
+            let mut buf = Vec::with_capacity(1024);
+            f.read_to_end(&mut buf).unwrap();
 
             FILES_BUF.insert(file_path, Bytes::from(buf));
+        }
+
+        self
+    }
+
+    /// 开启日志记录
+    /// # Args
+    /// - `max-level` - 日志最高级别，设置error,则不会记录info级别的日志
+    /// - `file_path` - 传入None表示输出到终端
+    /// # Examples
+    /// ```
+    ///
+    /// let glacier = GlacierBuilder::new()
+    ///     .bind(3000)
+    ///     .register_dir("/public")
+    ///     .start_log("info", Some("my_log.log"))
+    ///     .serve(routes)
+    ///     .build().await;
+    /// glacier.run().await.unwrap();
+    ///
+    /// ```
+    pub fn start_log(self, max_level: &str, file_path: Option<&str>) -> Self {
+        let level = tracing::Level::from_str(max_level).unwrap();
+
+        let file = file_path.map(|file_path| {
+            let options: _ = std::fs::OpenOptions::new().append(true).open(&file_path);
+            match options {
+                Ok(f) => f,
+                Err(_) => std::fs::File::create(&file_path).unwrap(),
+            }
+        });
+
+        match file {
+            Some(file) => tracing_subscriber::fmt()
+                .with_max_level(level)
+                .with_writer(file)
+                .with_ansi(false)
+                .with_target(false)
+                .init(),
+            None => tracing_subscriber::fmt()
+                .with_max_level(level)
+                .with_target(false)
+                .init(),
         }
 
         self
@@ -143,12 +200,40 @@ impl<T> GlacierBuilder<T> {
     pub fn from_config(config_path: &str) -> Self {
         let config = GlacierConfig::parse_config(config_path);
 
+        // Logging
+        let logging = config.logging;
+        if let Some(logging) = logging {
+            let level = tracing::Level::from_str(&logging.level).unwrap();
+            let file_path = logging.file_path;
+            let file = file_path.map(|file_path| {
+                let options: _ = std::fs::OpenOptions::new().append(true).open(&file_path);
+                match options {
+                    Ok(f) => f,
+                    Err(_) => std::fs::File::create(&file_path).unwrap(),
+                }
+            });
+
+            match file {
+                Some(file) => tracing_subscriber::fmt()
+                    .with_max_level(level)
+                    .with_writer(file)
+                    .with_ansi(false)
+                    .with_target(false)
+                    .init(),
+                None => tracing_subscriber::fmt()
+                    .with_max_level(level)
+                    .with_target(false)
+                    .init(),
+            }
+        }
+
+        // Server
         let server = config.server;
         let addr = (server.host, server.port);
 
+        // Resources
         let resources = config.resources;
         let assets_path = resources.assets;
-
         GlacierBuilder::<T>::new().register_dir(Box::leak(assets_path.into_boxed_str()));
 
         GlacierBuilder {
@@ -161,7 +246,10 @@ impl<T> GlacierBuilder<T> {
         let addr = self.addr.unwrap();
         let routes = self.routes.unwrap();
 
-        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+        let listener = tokio::net::TcpListener::bind(addr.clone()).await.unwrap();
+
+        tracing::info!("start server: http://{}:{}/", addr.0, addr.1);
+
         Glacier { listener, routes }
     }
 }

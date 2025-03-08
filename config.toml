@@ -4,8 +4,10 @@ port = 3000
 
 [resources]
 assets = "/public"
+
 # [database]
 # url = "postgres://user:pass@localhost:5432/dbname"
 
-# [logging]
-# level = "info"
+[logging]
+level = "info"
+# file_path = "my_log.txt"

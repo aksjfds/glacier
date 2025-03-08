@@ -1,7 +1,7 @@
 // #![allow(unused)]
 
 use bytes::BytesMut;
-use std::{net::IpAddr, time::Duration};
+use std::{fmt::Debug, net::IpAddr, time::Duration};
 use tokio::{io::AsyncReadExt, net::TcpStream, time::timeout};
 
 use super::request::{RequestHeader, RequestLine};
@@ -36,12 +36,17 @@ impl GlacierStream {
         buf.clear();
         pos.push(0);
 
-        // 读取数据到buf, 然后标记buf上的位置
+        /* ------------------------ // 读取数据到buf, 然后标记buf上的位置 ------------------------ */
         loop {
-            let len = timeout(Duration::from_secs(10), self.stream.read_buf(&mut buf)).await??;
-            if 0 == len {
-                Err(GlacierError::build_eof("Connection close"))?
-            }
+            let read_task: _ = self.stream.read_buf(&mut buf);
+            let read_task: _ = timeout(Duration::from_secs(10), read_task);
+
+            let len = match read_task.await {
+                Ok(Ok(0)) => Err(GlacierError::EofErr)?,
+                Ok(Ok(len @ 1..)) => len,
+                Ok(Err(e)) => Err(e)?,
+                _ => Err(GlacierError::TimeOutErr)?,
+            };
 
             for i in (buf.len() - len..buf.len()).step_by(2) {
                 match buf[i] {
@@ -80,14 +85,16 @@ impl GlacierStream {
             .map(|(i, pos_temp)| [pos[i - 1], *pos_temp]);
 
         // 请求行处理
-        let request_line = lines.next().expect("lines为空");
+        let request_line = lines.next().ok_or_else(|| {
+            tracing::debug!("lines is empty");
+            GlacierError::Option
+        })?;
         let request_line_pos = RequestLine::parse(&self.buf, request_line)?;
 
         // 请求头处理
         let request_headers_pos: Vec<[usize; 3]> = lines
             .map(|line| RequestHeader::parse(&self.buf, line))
-            .collect::<Result<Vec<_>>>()
-            .unwrap();
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(OneRequest {
             stream: self.stream,
@@ -96,5 +103,11 @@ impl GlacierStream {
             request_line_pos,
             request_headers_pos,
         })
+    }
+}
+
+impl Debug for GlacierStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_map().entry(&"ip", &self.addr).finish()
     }
 }

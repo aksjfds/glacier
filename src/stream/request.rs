@@ -35,23 +35,6 @@ impl OneRequest {
         unsafe { from_utf8_unchecked(method) }
     }
 
-    /// 修改请求方法
-    /// # Examples
-    /// ```
-    /// if req.method() == "POST" {
-    ///     req.modify_method("GET")
-    /// }
-    /// ```
-    pub fn modify_method(&mut self, data: &str) {
-        let method = unsafe {
-            &mut self
-                .buf
-                .get_unchecked_mut(self.request_line_pos[0]..self.request_line_pos[1] - 1)
-        };
-
-        method.copy_from_slice(data.as_bytes());
-    }
-
     /// 解析请求路径用于路由函数
     /// # Examples
     /// ```
@@ -81,17 +64,6 @@ impl OneRequest {
         unsafe { from_utf8_unchecked(uri) }
     }
 
-    /// 修改请求路径
-    pub fn modify_path(&mut self, data: &str) {
-        let path = unsafe {
-            &mut self
-                .buf
-                .get_unchecked_mut(self.request_line_pos[1]..self.request_line_pos[2] - 1)
-        };
-
-        path.copy_from_slice(data.as_bytes());
-    }
-
     /// http协议版本
     pub fn version(&self) -> &str {
         let version = unsafe {
@@ -99,17 +71,6 @@ impl OneRequest {
                 .get_unchecked(self.request_line_pos[2]..self.request_line_pos[3] - 1)
         };
         unsafe { from_utf8_unchecked(version) }
-    }
-
-    /// 修改http协议版本
-    pub fn modify_version(&mut self, data: &str) {
-        let version = unsafe {
-            &mut self
-                .buf
-                .get_unchecked_mut(self.request_line_pos[2]..self.request_line_pos[3] - 1)
-        };
-
-        version.copy_from_slice(data.as_bytes());
     }
 
     /// 查找请求头
@@ -132,26 +93,6 @@ impl OneRequest {
         }
 
         None
-    }
-
-    /// 修改请求头
-    /// # Examples
-    /// ```
-    /// req.modify_header("Host", "new_value");
-    /// ```
-    pub fn modify_header(&mut self, query_key: &str, new_value: &str) {
-        let query_key = query_key.as_bytes();
-        let headers = &self.request_headers_pos;
-        for header in headers {
-            let key = unsafe { self.buf.get_unchecked(header[0]..header[1]) };
-            if query_key == key {
-                unsafe {
-                    let value = self.buf.get_unchecked_mut(header[1] + 2..header[2] - 2);
-
-                    value.copy_from_slice(new_value.as_bytes());
-                }
-            }
-        }
     }
 
     /// 获取请求参数
@@ -214,8 +155,8 @@ impl OneRequest {
     /// req.respond(res).await.unwrap();
     /// ```
     pub async fn respond(&mut self, mut res: Response) -> Result<()> {
-        self.stream.write_all_buf(&mut res.buf).await.unwrap();
-        self.stream.flush().await.unwrap();
+        self.stream.write_all_buf(&mut res.buf).await?;
+        self.stream.flush().await?;
 
         Ok(())
     }
@@ -229,9 +170,13 @@ impl OneRequest {
     /// ```
     pub async fn respond_buf(&mut self, file_path: String) -> Result<()> {
         // 获取缓存中的文件内容
-        let buf = FILES_BUF
-            .get(&file_path)
-            .ok_or_else(|| GlacierError::build_option("无此缓存"))?;
+        let buf = match FILES_BUF.get(&file_path) {
+            Some(buf) => buf,
+            None => {
+                tracing::info!(file_path, "new req to file that not exist");
+                Err(GlacierError::Option)?
+            }
+        };
 
         let header = format!(
             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n",
@@ -306,8 +251,11 @@ impl RequestLine {
             }
         }
         if second_space == 0 {
-            println!("{:#?}", request_line);
-            Err(GlacierError::build_req("解析请求行出错"))?
+            match std::str::from_utf8(request_line) {
+                Ok(line) => tracing::debug!(line, "failed parsing request line"),
+                Err(_) => tracing::debug!("failed parsing request line"),
+            }
+            Err(GlacierError::Option)?
         }
 
         Ok([0, first_space + 1, second_space + 1, pos[1] - 1])
@@ -328,6 +276,10 @@ impl RequestHeader {
             }
         }
 
-        Err(GlacierError::build_req("请求头格式错误"))
+        match std::str::from_utf8(header) {
+            Ok(header) => tracing::debug!(header, "failed parsing request head"),
+            Err(_) => tracing::debug!("failed parsing request head"),
+        }
+        Err(GlacierError::Option)
     }
 }

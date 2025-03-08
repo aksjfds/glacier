@@ -3,15 +3,9 @@
 use glacier::prelude::*;
 use std::str::from_utf8;
 
-#[glacier(GET, "/", [ip_middle(2000, 3)])]
+#[glacier(GET, "/")]
 async fn basic(mut req: OneRequest) {
-    let res = ResponseBuilder::new(128)
-        .status(200)
-        .header("Connection", "close")
-        .content_type(ContentType::Plain)
-        .body("你好，世界".as_bytes())
-        .build();
-    req.respond(res).await.unwrap();
+    req.respond_hello().await.unwrap();
 }
 
 #[glacier(POST, "/hello")]
@@ -24,7 +18,6 @@ async fn hello(mut req: OneRequest) {
 
 #[main]
 async fn main() -> Result<()> {
-    println!("{:#?}", "http://localhost:3000");
     let glacier = GlacierBuilder::from_config("config.toml")
         .server(routes)
         .build()

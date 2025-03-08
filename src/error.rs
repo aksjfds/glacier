@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use std::{error::Error as StdError, fmt::Debug, str::Utf8Error};
 
 use tokio::time::error::Elapsed;
@@ -9,19 +11,33 @@ use tokio::time::error::Elapsed;
 //
 impl Debug for GlacierError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let None = self.source {
-            f.debug_struct("GlacierError")
-                .field("kind", &self.kind)
-                .field("description", &self.description)
-                .finish()
-        } else {
-            write!(f, "{:?}", self.source.as_ref().unwrap())
+        match self {
+            GlacierError::Detail(inner_error) => {
+                if let None = inner_error.source {
+                    f.debug_struct("GlacierError")
+                        .field("kind", &inner_error.kind)
+                        .field("description", &inner_error.description)
+                        .finish()
+                } else {
+                    write!(f, "{:?}", inner_error.source.as_ref().unwrap())
+                }
+            }
+            _ => Ok(()),
         }
     }
 }
 
+pub enum GlacierError {
+    Detail(InnerError),
+    Option,
+    IOErr,
+    UTF8Error,
+    EofErr,
+    TimeOutErr,
+}
+
 pub(crate) type BoxError = Box<dyn StdError + Send + Sync>;
-pub struct GlacierError {
+pub struct InnerError {
     kind: Kind,
     source: Option<BoxError>,
     description: &'static str,
@@ -29,7 +45,8 @@ pub struct GlacierError {
 
 #[derive(Debug)]
 pub enum Kind {
-    BuildReq,
+    InRequest,
+    InServer,
     IOErr,
     UTF8Error,
     TimeOutErr,
@@ -39,26 +56,40 @@ pub enum Kind {
 
 impl GlacierError {
     fn new(kind: Kind, description: &'static str, source: Option<BoxError>) -> Self {
-        GlacierError {
+        let e = InnerError {
             kind,
             description,
             source,
-        }
+        };
+        GlacierError::Detail(e)
     }
 
     pub fn kind(&self) -> &Kind {
-        &self.kind
+        match self {
+            GlacierError::Option => &Kind::Option,
+            GlacierError::Detail(inner_error) => &inner_error.kind,
+            GlacierError::IOErr => &Kind::IOErr,
+            GlacierError::UTF8Error => &Kind::UTF8Error,
+            GlacierError::EofErr => &Kind::EofErr,
+            GlacierError::TimeOutErr => &Kind::TimeOutErr,
+        }
     }
 
-    pub fn description(&self) -> &str {
-        self.description
+    pub fn description(&self) -> String {
+        match self {
+            GlacierError::Detail(inner_error) => match &inner_error.source {
+                Some(source) => source.to_string(),
+                None => String::from(""),
+            },
+            _ => String::from(""),
+        }
     }
 }
 
 /* --------------------------------- // 错误工厂 -------------------------------- */
 impl GlacierError {
     pub(crate) fn build_req(description: &'static str) -> GlacierError {
-        GlacierError::new(Kind::BuildReq, description, None)
+        GlacierError::new(Kind::InRequest, description, None)
     }
 
     pub(crate) fn build_eof(description: &'static str) -> GlacierError {
@@ -67,6 +98,10 @@ impl GlacierError {
 
     pub(crate) fn build_option(description: &'static str) -> GlacierError {
         GlacierError::new(Kind::Option, description, None)
+    }
+
+    pub(crate) fn build_server(description: &'static str) -> GlacierError {
+        GlacierError::new(Kind::InServer, description, None)
     }
 }
 

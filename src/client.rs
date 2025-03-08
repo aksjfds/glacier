@@ -32,26 +32,38 @@ where
 
         let srv = async move {
             loop {
-                let stream = listener.accept().await.unwrap();
-                let stream = (stream.0, stream.1.ip());
-                let stream = GlacierStream::new(stream);
+                match listener.accept().await {
+                    Ok(stream) => {
+                        let stream = (stream.0, stream.1.ip());
+                        let stream = GlacierStream::new(stream);
 
-                tokio::spawn(Glacier::handle_connection(stream, routes));
+                        tokio::spawn(Glacier::handle_connection(stream, routes));
+                    }
+                    Err(e) => tracing::info!(e = e.to_string(), "error connection!"),
+                };
             }
         };
 
-        tokio::spawn(srv).await.unwrap();
+        let _ = tokio::spawn(srv).await;
 
         Ok(())
     }
 
-    async fn handle_connection(mut glacier_stream: GlacierStream, routes: Routes<T>) -> Result<()> {
+    #[tracing::instrument(skip(routes), "")]
+    async fn handle_connection(mut stream: GlacierStream, routes: Routes<T>) -> Result<()> {
+        // let span = tracing::info_span!("", ip = stream.addr.to_string());
+        // let _guard = span.enter();
+        tracing::info!("new connection!");
+
         loop {
-            let mut one_req = match glacier_stream.to_req().await {
+            let mut one_req = match stream.to_req().await {
                 Ok(one_req) => one_req,
                 Err(e) => {
-                    if !matches!(e.kind(), Kind::EofErr) {
-                        println!("{:#?}", e);
+                    match e.kind() {
+                        Kind::EofErr => {}
+                        Kind::Option => {}
+                        Kind::TimeOutErr => tracing::debug!("connection timeout"),
+                        _ => tracing::debug!(description = e.description()),
                     }
                     return Ok(());
                 }
@@ -59,12 +71,9 @@ where
 
             one_req = match routes(one_req).await {
                 Ok(one_req) => one_req,
-                Err(e) => {
-                    println!("{:#?}", e);
-                    return Ok(());
-                }
+                Err(_) => return Ok(()),
             };
-            glacier_stream = one_req.to_stream();
+            stream = one_req.to_stream();
         }
     }
 }

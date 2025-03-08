@@ -171,12 +171,14 @@ fn gen_main(mut ast: syn::ItemFn) -> TokenStream {
                 let pos = req.path_for_routes().rfind("/").unwrap_or(0);
                 let req_dir_path = &req.path_for_routes()[..pos];
                 if req_dir_path != unsafe { DIR_PATH } {
-                    req.respond_404().await;
+                    req.respond_404().await?;
                     return Ok(req);
                 }
 
                 let file_path = String::from(&req.path_for_routes()[1..]);
-                req.respond_buf(file_path).await?;
+                if let Err(e) = req.respond_buf(file_path).await {
+                    req.respond_404().await?;
+                }
             }
 
         }
