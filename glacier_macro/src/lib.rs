@@ -217,7 +217,6 @@ fn gen_main(mut ast: syn::ItemFn) -> TokenStream {
         /// ```
         #routes_func
 
-        #[tokio::main]
         #ast
     };
 

@@ -1,70 +1,25 @@
 use bytes::Bytes;
-use serde::Deserialize;
-use std::{io::Read, str::FromStr};
+use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+use std::{io::Read, net::SocketAddrV4, str::FromStr};
+use tokio::net::TcpListener;
 
-use crate::prelude::{Glacier, Routes, DIR_PATH, FILES_BUF};
+use crate::{
+    error::{GlacierError, Kind},
+    prelude::{Glacier, Result, Routes, DIR_PATH, FILES_BUF},
+};
 //
 //
 //
 //
 //
 //
-fn default_host() -> String {
-    String::from("0.0.0.0")
-}
-
-fn default_port() -> u16 {
-    3000
-}
-
-#[derive(Debug, Deserialize)]
-struct Server {
-    #[serde(default = "default_host")]
-    host: String,
-    #[serde(default = "default_port")]
-    port: u16,
-}
-
-fn default_assets() -> String {
-    String::new()
-}
-
-#[derive(Debug, Deserialize)]
-struct Resources {
-    #[serde(default = "default_assets")]
-    assets: String,
-}
-
-fn default_logging_level() -> String {
-    String::from("info")
-}
-
-#[derive(Debug, Deserialize)]
-struct Logging {
-    #[serde(default = "default_logging_level")]
-    level: String,
-    file_path: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GlacierConfig {
-    server: Server,
-    resources: Resources,
-    logging: Option<Logging>,
-}
-
-impl GlacierConfig {
-    fn parse_config(config_path: &str) -> GlacierConfig {
-        let content = std::fs::read_to_string(config_path).unwrap();
-        let config: GlacierConfig = toml::from_str(&content).unwrap();
-
-        config
-    }
-}
 
 pub struct GlacierBuilder<T> {
     routes: Option<Routes<T>>,
     addr: Option<(String, u16)>,
+    reuse_port: bool,
+    #[cfg(feature = "tls")]
+    acceptor: Option<tokio_rustls::TlsAcceptor>,
 }
 
 impl<T> GlacierBuilder<T> {
@@ -72,6 +27,8 @@ impl<T> GlacierBuilder<T> {
         GlacierBuilder {
             routes: None,
             addr: None,
+            acceptor: None,
+            reuse_port: false,
         }
     }
 
@@ -83,8 +40,9 @@ impl<T> GlacierBuilder<T> {
     /// ```
     /// let glacier = GlacierBuilder::new().bind(3000);
     /// ```
-    pub fn bind(mut self, addr: impl IntoAddr) -> Self {
+    pub fn bind(mut self, addr: impl IntoAddr, reuse_port: bool) -> Self {
         self.addr = Some(addr.into_addr());
+        self.reuse_port = reuse_port;
         self
     }
 
@@ -188,69 +146,65 @@ impl<T> GlacierBuilder<T> {
         self
     }
 
-    /// 从配置文件中加载服务器配置
-    /// # Examples
-    /// ```
-    /// let glacier = GlacierBuilder::from_config("config.toml")
-    ///     .server(routes)
-    ///     .build()
-    ///     .await;
-    /// glacier.run().await.unwrap();
-    /// ```
-    pub fn from_config(config_path: &str) -> Self {
-        let config = GlacierConfig::parse_config(config_path);
+    #[cfg(feature = "tls")]
+    pub fn open_tls(mut self) -> crate::Result<Self> {
+        use std::{fs::File, io::BufReader, sync::Arc};
 
-        // Logging
-        let logging = config.logging;
-        if let Some(logging) = logging {
-            let level = tracing::Level::from_str(&logging.level).unwrap();
-            let file_path = logging.file_path;
-            let file = file_path.map(|file_path| {
-                let options: _ = std::fs::OpenOptions::new().append(true).open(&file_path);
-                match options {
-                    Ok(f) => f,
-                    Err(_) => std::fs::File::create(&file_path).unwrap(),
-                }
-            });
+        use rustls::pki_types::{pem::PemObject, PrivateKeyDer};
+        use rustls_pemfile::certs;
+        use tokio_rustls::TlsAcceptor;
 
-            match file {
-                Some(file) => tracing_subscriber::fmt()
-                    .with_max_level(level)
-                    .with_writer(file)
-                    .with_ansi(false)
-                    .with_target(false)
-                    .init(),
-                None => tracing_subscriber::fmt()
-                    .with_max_level(level)
-                    .with_target(false)
-                    .init(),
-            }
-        }
+        let mut cert_file =
+            BufReader::new(File::open("/home/aksjfds/codes/http3_server/cert.pem")?);
+        let key_file = BufReader::new(File::open("/home/aksjfds/codes/http3_server/key.pem")?);
 
-        // Server
-        let server = config.server;
-        let addr = (server.host, server.port);
+        let cert_chain: Vec<_> =
+            certs(&mut cert_file).collect::<core::result::Result<Vec<_>, _>>()?;
+        let key = PrivateKeyDer::from_pem_reader(key_file)?;
 
-        // Resources
-        let resources = config.resources;
-        let assets_path = resources.assets;
-        GlacierBuilder::<T>::new().register_dir(Box::leak(assets_path.into_boxed_str()));
+        let config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(cert_chain, key)?;
 
-        GlacierBuilder {
-            routes: None,
-            addr: Some(addr),
-        }
+        let acceptor = TlsAcceptor::from(Arc::new(config));
+        self.acceptor = Some(acceptor);
+
+        Ok(self)
     }
 
-    pub async fn build(self) -> Glacier<T> {
-        let addr = self.addr.unwrap();
+    pub async fn build(self) -> Result<Glacier<T>> {
         let routes = self.routes.unwrap();
+        let (ip, port) = self.addr.unwrap();
+        let addr = SocketAddrV4::new(ip.parse().unwrap(), port);
 
-        let listener = tokio::net::TcpListener::bind(addr.clone()).await.unwrap();
+        let listener = match self.reuse_port {
+            true => {
+                let addr = SockAddr::from(addr);
+                let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP))?;
+                socket.set_reuse_port(true)?;
+                socket.set_nonblocking(true)?;
+                socket.bind(&addr).map_err(|e| {
+                    let description = format!("error when bind: {}", e);
+                    GlacierError::not_ok_err(Kind::IOErr, description)
+                })?;
+                socket.listen(128)?;
+                let listener = socket.into();
+                TcpListener::from_std(listener)?
+            }
+            false => tokio::net::TcpListener::bind(addr).await?,
+        };
 
-        tracing::info!("start server: http://{}:{}/", addr.0, addr.1);
+        match self.acceptor.as_ref() {
+            Some(_) => tracing::info!("start server: https://{}:{}/", ip, port),
+            None => tracing::info!("start server: http://{}:{}/", ip, port),
+        };
 
-        Glacier { listener, routes }
+        let acceptor = self.acceptor.unwrap();
+        Ok(Glacier {
+            listener,
+            routes,
+            acceptor,
+        })
     }
 }
 
@@ -260,7 +214,7 @@ pub trait IntoAddr {
 
 impl IntoAddr for u16 {
     fn into_addr(self) -> (String, u16) {
-        (String::from("0.0.0.0"), self)
+        (String::from("127.0.0.1"), self)
     }
 }
 

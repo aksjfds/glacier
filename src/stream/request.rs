@@ -4,23 +4,59 @@ use std::str::from_utf8_unchecked;
 use std::{io::IoSlice, net::IpAddr};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
 
-use crate::prelude::{GlacierError, GlacierStream, Response, Result, FILES_BUF};
+use crate::prelude::{GlacierError, Response, Result, FILES_BUF};
 
 // /* ------------------------------ // OneRequest ----------------------------- */
+pub struct ReqInfo {
+    pub(crate) line_pos: [usize; 4],
+    pub(crate) headers_pos: Vec<[usize; 3]>,
+}
+
 pub struct OneRequest {
+    #[cfg(feature = "tls")]
+    pub(crate) stream: tokio_rustls::server::TlsStream<TcpStream>,
+
+    #[cfg(not(feature = "tls"))]
     pub(crate) stream: TcpStream,
+
     pub(crate) addr: IpAddr,
     pub(crate) buf: BytesMut,
-    pub(crate) request_line_pos: [usize; 4],
-    pub(crate) request_headers_pos: Vec<[usize; 3]>,
+    pub(crate) line_pos: [usize; 4],
+    pub(crate) headers_pos: Vec<[usize; 3]>,
 }
 
 impl OneRequest {
+    #[cfg(not(feature = "tls"))]
+    pub fn new(stream: TcpStream, buf: BytesMut, req_info: ReqInfo, addr: IpAddr) -> OneRequest {
+        OneRequest {
+            stream,
+            addr,
+            buf,
+            line_pos: req_info.line_pos,
+            headers_pos: req_info.headers_pos,
+        }
+    }
+    #[cfg(feature = "tls")]
+    pub fn new(
+        stream: tokio_rustls::server::TlsStream<TcpStream>,
+        buf: BytesMut,
+        req_info: ReqInfo,
+        addr: IpAddr,
+    ) -> OneRequest {
+        OneRequest {
+            stream,
+            addr,
+            buf,
+            line_pos: req_info.line_pos,
+            headers_pos: req_info.headers_pos,
+        }
+    }
+
     /// 请求行
     pub fn request_line(&self) -> &str {
         let request_line = unsafe {
             self.buf
-                .get_unchecked(self.request_line_pos[0]..self.request_line_pos[3] - 1)
+                .get_unchecked(self.line_pos[0]..self.line_pos[3] - 1)
         };
 
         unsafe { from_utf8_unchecked(request_line) }
@@ -30,7 +66,7 @@ impl OneRequest {
     pub fn method(&self) -> &str {
         let method = unsafe {
             self.buf
-                .get_unchecked(self.request_line_pos[0]..self.request_line_pos[1] - 1)
+                .get_unchecked(self.line_pos[0]..self.line_pos[1] - 1)
         };
         unsafe { from_utf8_unchecked(method) }
     }
@@ -45,7 +81,7 @@ impl OneRequest {
     pub fn path_for_routes(&self) -> &str {
         let uri = unsafe {
             self.buf
-                .get_unchecked(self.request_line_pos[1]..self.request_line_pos[2] - 1)
+                .get_unchecked(self.line_pos[1]..self.line_pos[2] - 1)
         };
         let uri = unsafe { from_utf8_unchecked(uri) };
         if let Some(pos) = uri.find("?") {
@@ -59,7 +95,7 @@ impl OneRequest {
     pub fn path(&self) -> &str {
         let uri = unsafe {
             self.buf
-                .get_unchecked(self.request_line_pos[1]..self.request_line_pos[2] - 1)
+                .get_unchecked(self.line_pos[1]..self.line_pos[2] - 1)
         };
         unsafe { from_utf8_unchecked(uri) }
     }
@@ -68,7 +104,7 @@ impl OneRequest {
     pub fn version(&self) -> &str {
         let version = unsafe {
             self.buf
-                .get_unchecked(self.request_line_pos[2]..self.request_line_pos[3] - 1)
+                .get_unchecked(self.line_pos[2]..self.line_pos[3] - 1)
         };
         unsafe { from_utf8_unchecked(version) }
     }
@@ -80,7 +116,7 @@ impl OneRequest {
     /// ```
     pub fn query_header(&self, query_key: &str) -> Option<&str> {
         let query_key = query_key.as_bytes();
-        let headers = &self.request_headers_pos;
+        let headers = &self.headers_pos;
         for header in headers {
             let key = unsafe { self.buf.get_unchecked(header[0]..header[1]) };
             if query_key == key {
@@ -111,7 +147,7 @@ impl OneRequest {
     pub fn get_params<T: for<'a> Deserialize<'a>>(&self) -> Option<T> {
         let uri = unsafe {
             self.buf
-                .get_unchecked(self.request_line_pos[1]..self.request_line_pos[2] - 1)
+                .get_unchecked(self.line_pos[1]..self.line_pos[2] - 1)
         };
         let uri = unsafe { from_utf8_unchecked(uri) };
 
@@ -123,25 +159,17 @@ impl OneRequest {
         }
     }
 
+    #[cfg(not(feature = "tls"))]
     /// 获取请求体
     pub async fn body(&mut self) -> Option<&[u8]> {
         if self.method() == "GET" {
             return None;
         }
-
         while let Ok(_len @ 1..) = self.stream.try_read_buf(&mut self.buf) {}
 
-        let pos_1 = self.request_headers_pos[self.request_headers_pos.len() - 1][2];
+        let pos_1 = self.headers_pos[self.headers_pos.len() - 1][2];
 
         unsafe { Some(self.buf.get_unchecked(pos_1 + 2..)) }
-    }
-
-    pub(crate) fn to_stream(self) -> GlacierStream {
-        GlacierStream {
-            stream: self.stream,
-            addr: self.addr,
-            buf: self.buf,
-        }
     }
 
     /// 发生响应
@@ -233,7 +261,7 @@ impl OneRequest {
 pub struct RequestLine;
 
 impl RequestLine {
-    pub(super) fn parse(buf: &BytesMut, pos: [usize; 2]) -> Result<[usize; 4]> {
+    pub(crate) fn parse(buf: &BytesMut, pos: [usize; 2]) -> Result<[usize; 4]> {
         // GET /favicon.ico HTTP/1.1\r\n
 
         let request_line = unsafe { buf.get_unchecked(pos[0]..pos[1]) };
@@ -267,7 +295,7 @@ impl RequestLine {
 pub struct RequestHeader;
 
 impl RequestHeader {
-    pub(super) fn parse(buf: &BytesMut, line: [usize; 2]) -> Result<[usize; 3]> {
+    pub(crate) fn parse(buf: &BytesMut, line: [usize; 2]) -> Result<[usize; 3]> {
         let header = unsafe { buf.get_unchecked(line[0]..line[1] - 2) };
 
         for i in 0..header.len() {

@@ -9,5 +9,5 @@ assets = "/public"
 # url = "postgres://user:pass@localhost:5432/dbname"
 
 [logging]
-level = "info"
+level = "debug"
 # file_path = "my_log.txt"

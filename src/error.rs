@@ -1,6 +1,8 @@
-#![allow(unused)]
-
-use std::{error::Error as StdError, fmt::Debug, str::Utf8Error};
+use std::{
+    error::Error as StdError,
+    fmt::{self, Debug},
+    str::Utf8Error,
+};
 
 use tokio::time::error::Elapsed;
 
@@ -10,37 +12,49 @@ use tokio::time::error::Elapsed;
 //
 //
 impl Debug for GlacierError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            GlacierError::Detail(inner_error) => {
-                if let None = inner_error.source {
-                    f.debug_struct("GlacierError")
-                        .field("kind", &inner_error.kind)
-                        .field("description", &inner_error.description)
-                        .finish()
-                } else {
-                    write!(f, "{:?}", inner_error.source.as_ref().unwrap())
-                }
+            GlacierError::BoxErr(err) => f
+                .debug_struct("GlacierError")
+                .field("kind", &"BoxErr")
+                .field("description", &err.to_string())
+                .finish(),
+            GlacierError::NotOkErr(err_info) => f
+                .debug_struct("GlacierError")
+                .field("kind", &err_info.kind)
+                .field("description", &err_info.description)
+                .finish(),
+            GlacierError::OkErr(kind) => {
+                f.debug_struct("GlacierError").field("kind", kind).finish()
             }
-            _ => Ok(()),
+            GlacierError::Option => f
+                .debug_struct("GlacierError")
+                .field("kind", &"Option")
+                .finish(),
         }
     }
 }
 
-pub enum GlacierError {
-    Detail(InnerError),
-    Option,
-    IOErr,
-    UTF8Error,
-    EofErr,
-    TimeOutErr,
+impl Debug for ErrInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ErrInfo")
+            .field("kind", &self.kind)
+            .field("description", &self.description)
+            .finish()
+    }
 }
 
 pub(crate) type BoxError = Box<dyn StdError + Send + Sync>;
-pub struct InnerError {
+pub enum GlacierError {
+    BoxErr(BoxError),
+    NotOkErr(ErrInfo),
+    OkErr(Kind),
+    Option,
+}
+
+pub struct ErrInfo {
     kind: Kind,
-    source: Option<BoxError>,
-    description: &'static str,
+    description: String,
 }
 
 #[derive(Debug)]
@@ -51,75 +65,61 @@ pub enum Kind {
     UTF8Error,
     TimeOutErr,
     EofErr,
-    Option,
-}
-
-impl GlacierError {
-    fn new(kind: Kind, description: &'static str, source: Option<BoxError>) -> Self {
-        let e = InnerError {
-            kind,
-            description,
-            source,
-        };
-        GlacierError::Detail(e)
-    }
-
-    pub fn kind(&self) -> &Kind {
-        match self {
-            GlacierError::Option => &Kind::Option,
-            GlacierError::Detail(inner_error) => &inner_error.kind,
-            GlacierError::IOErr => &Kind::IOErr,
-            GlacierError::UTF8Error => &Kind::UTF8Error,
-            GlacierError::EofErr => &Kind::EofErr,
-            GlacierError::TimeOutErr => &Kind::TimeOutErr,
-        }
-    }
-
-    pub fn description(&self) -> String {
-        match self {
-            GlacierError::Detail(inner_error) => match &inner_error.source {
-                Some(source) => source.to_string(),
-                None => String::from(""),
-            },
-            _ => String::from(""),
-        }
-    }
 }
 
 /* --------------------------------- // 错误工厂 -------------------------------- */
+pub(crate) trait IntoDes {
+    fn to_des(self) -> String;
+}
+impl IntoDes for String {
+    fn to_des(self) -> String {
+        self
+    }
+}
+
+impl IntoDes for &str {
+    fn to_des(self) -> String {
+        String::from(self)
+    }
+}
+
 impl GlacierError {
-    pub(crate) fn build_req(description: &'static str) -> GlacierError {
-        GlacierError::new(Kind::InRequest, description, None)
-    }
-
-    pub(crate) fn build_eof(description: &'static str) -> GlacierError {
-        GlacierError::new(Kind::EofErr, description, None)
-    }
-
-    pub(crate) fn build_option(description: &'static str) -> GlacierError {
-        GlacierError::new(Kind::Option, description, None)
-    }
-
-    pub(crate) fn build_server(description: &'static str) -> GlacierError {
-        GlacierError::new(Kind::InServer, description, None)
+    pub(crate) fn not_ok_err(kind: Kind, description: impl IntoDes) -> GlacierError {
+        GlacierError::NotOkErr(ErrInfo {
+            kind,
+            description: description.to_des(),
+        })
     }
 }
 
 /* --------------------------------- // From -------------------------------- */
 impl From<Utf8Error> for GlacierError {
     fn from(value: Utf8Error) -> Self {
-        GlacierError::new(Kind::UTF8Error, "", Some(Box::from(value)))
+        GlacierError::BoxErr(Box::new(value))
     }
 }
 
 impl From<std::io::Error> for GlacierError {
     fn from(value: std::io::Error) -> Self {
-        GlacierError::new(Kind::IOErr, "", Some(Box::from(value)))
+        GlacierError::BoxErr(Box::new(value))
     }
 }
 
 impl From<Elapsed> for GlacierError {
     fn from(value: Elapsed) -> Self {
-        GlacierError::new(Kind::TimeOutErr, "", Some(Box::from(value)))
+        GlacierError::BoxErr(Box::new(value))
+    }
+}
+
+#[cfg(feature = "tls")]
+impl From<rustls::pki_types::pem::Error> for GlacierError {
+    fn from(value: rustls::pki_types::pem::Error) -> Self {
+        GlacierError::BoxErr(Box::new(value))
+    }
+}
+#[cfg(feature = "tls")]
+impl From<rustls::Error> for GlacierError {
+    fn from(value: rustls::Error) -> Self {
+        GlacierError::BoxErr(Box::new(value))
     }
 }

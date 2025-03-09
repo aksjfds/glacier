@@ -1,4 +1,7 @@
-use crate::prelude::{GlacierError, OneRequest, Result, IP};
+use crate::{
+    error::Kind,
+    prelude::{GlacierError, OneRequest, Result, IP},
+};
 use std::time::SystemTime;
 ///
 ///
@@ -15,7 +18,10 @@ pub async fn ip_middle(req: OneRequest, min_interval: u128, times: usize) -> Res
     let (last_time, count) = ip_entry.value_mut();
 
     if *count > times {
-        Err(GlacierError::build_option("ip访问次数过快"))?
+        Err(GlacierError::not_ok_err(
+            Kind::InRequest,
+            "too many request in short time!",
+        ))?
     }
 
     let new_time = SystemTime::now();

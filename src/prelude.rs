@@ -2,7 +2,6 @@ pub use crate::client::Glacier;
 pub use crate::config::GlacierBuilder;
 pub use crate::error::{GlacierError, Kind};
 pub use crate::middles::ip_middle::ip_middle;
-pub(crate) use crate::stream::glacier_stream::GlacierStream;
 pub use crate::stream::request::OneRequest;
 pub use crate::stream::response::ContentType;
 pub use crate::stream::response::Response;

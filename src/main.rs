@@ -1,7 +1,7 @@
 #![allow(unused)]
 
 use glacier::prelude::*;
-use std::str::from_utf8;
+use std::thread;
 
 #[glacier(GET, "/")]
 async fn basic(mut req: OneRequest) {
@@ -10,21 +10,55 @@ async fn basic(mut req: OneRequest) {
 
 #[glacier(POST, "/hello")]
 async fn hello(mut req: OneRequest) {
-    let body = req.body().await.unwrap();
-    println!("{:#?}", from_utf8(body));
+    // let body = req.body().await.unwrap();
+    // println!("{:#?}", from_utf8(body));
 
     req.respond_hello().await;
 }
 
 #[main]
-async fn main() -> Result<()> {
-    let glacier = GlacierBuilder::from_config("config.toml")
-        .server(routes)
-        .build()
-        .await;
+fn main() -> Result<()> {
+    // let rt = tokio::runtime::Builder::new_multi_thread()
+    //     .enable_all()
+    //     .build()?;
+    // rt.block_on(async {
+    //     let glacier = GlacierBuilder::new()
+    //         .open_tls()
+    //         .unwrap()
+    //         .bind(443)
+    //         // .start_log("debug", None)
+    //         // .register_dir("/public")
+    //         .server(routes)
+    //         .build()
+    //         .await;
 
-    glacier.run().await.unwrap();
+    //     glacier.run().await.unwrap();
+    // });
 
+    for i in 0..16 {
+        thread::spawn(|| {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let glacier = GlacierBuilder::new()
+                    .start_log("debug", None)
+                    // .register_dir("/public")
+                    .open_tls()
+                    .unwrap()
+                    .server(routes)
+                    .bind(443, true)
+                    .build()
+                    .await
+                    .unwrap();
+
+                glacier.run().await.unwrap();
+            });
+        });
+    }
+
+    thread::park();
     Ok(())
 }
 
