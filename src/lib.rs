@@ -1,6 +1,5 @@
 use bytes::Bytes;
 use dashmap::DashMap;
-use prelude::OneRequest;
 use std::{net::IpAddr, sync::LazyLock, time::SystemTime};
 
 pub mod client;
@@ -8,8 +7,7 @@ pub mod config;
 pub mod error;
 pub mod middles;
 pub mod prelude;
-pub mod stream;
-
+pub mod response;
 //
 //
 //
@@ -17,7 +15,7 @@ pub mod stream;
 //
 //
 pub type Result<T> = core::result::Result<T, error::GlacierError>;
-pub type Routes<T> = fn(OneRequest) -> T;
+pub type Routes<T> = fn(http::Request<h2::RecvStream>) -> T;
 
 /// 静态资源路径
 pub static mut DIR_PATH: &'static str = "";

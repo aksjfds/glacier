@@ -1,92 +1,43 @@
 #![allow(unused)]
 
 use glacier::prelude::*;
-use std::thread;
+use std::{fmt::Debug, fs::File, slice::from_raw_parts, thread};
 
-#[glacier(GET, "/")]
-async fn basic(mut req: OneRequest) {
-    req.respond_hello().await.unwrap();
+async fn handle_error<E: Debug>(res: std::result::Result<HttpResponse, E>) -> HttpResponse {
+    res.unwrap()
 }
 
-#[glacier(POST, "/hello")]
-async fn hello(mut req: OneRequest) {
-    // let body = req.body().await.unwrap();
-    // println!("{:#?}", from_utf8(body));
-
-    req.respond_hello().await;
+async fn handle_404(mut req: Request<RecvStream>) -> std::result::Result<HttpResponse, ()> {
+    Ok(HttpResponse::Ok().body(TEXT_PLAIN, "404"))
 }
+
+#[glacier(POST, "/")]
+async fn hello(mut req: Request<RecvStream>) -> std::result::Result<HttpResponse, ()> {
+    let data = req.body_mut().data().await;
+
+    let res = HttpResponse::Ok().body(TEXT_PLAIN, "Hello, World!");
+
+    Ok(res)
+}
+
+// TODO 改成这种形式：
+// async fn router(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+//     match req.uri().path() {
+//         "/" => [ip_middle, home],
+//         "/user" => [user],
+//         _ => [404],
+//     }
+// }
 
 #[main]
-fn main() -> Result<()> {
-    // let rt = tokio::runtime::Builder::new_multi_thread()
-    //     .enable_all()
-    //     .build()?;
-    // rt.block_on(async {
-    //     let glacier = GlacierBuilder::new()
-    //         .open_tls()
-    //         .unwrap()
-    //         .bind(443)
-    //         // .start_log("debug", None)
-    //         // .register_dir("/public")
-    //         .server(routes)
-    //         .build()
-    //         .await;
+async fn main() {
+    let glacier = GlacierBuilder::bind(443)
+        // .tls()
+        // .log("debug", None)
+        // .register_dir("/public")
+        .server(routes)
+        .build()
+        .await;
 
-    //     glacier.run().await.unwrap();
-    // });
-
-    for i in 0..16 {
-        thread::spawn(|| {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            rt.block_on(async {
-                let glacier = GlacierBuilder::new()
-                    .start_log("debug", None)
-                    // .register_dir("/public")
-                    .open_tls()
-                    .unwrap()
-                    .server(routes)
-                    .bind(443, true)
-                    .build()
-                    .await
-                    .unwrap();
-
-                glacier.run().await.unwrap();
-            });
-        });
-    }
-
-    thread::park();
-    Ok(())
-}
-
-#[test]
-fn test() -> Result<()> {
-    use std::io::Write;
-    use std::net::TcpStream;
-
-    // 连接到 localhost:3000
-    let mut stream = TcpStream::connect("127.0.0.1:3000")?;
-
-    // 构造 POST 请求
-    let json_data = r#"{"name": "Rust", "message": "Hello from Rust!"}"#;
-    let request = format!(
-        "POST /hello HTTP/1.1\r\n\
-         Host: localhost\r\n\
-         Content-Type: application/json\r\n\
-         Content-Length: {}\r\n\
-         Connection: close\r\n\
-         \r\n\
-         {}",
-        json_data.len(),
-        json_data
-    );
-
-    // 发送请求
-    stream.write_all(request.as_bytes())?;
-    stream.flush()?;
-
-    Ok(())
+    glacier.run().await.unwrap();
 }
