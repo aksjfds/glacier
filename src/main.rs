@@ -1,43 +1,60 @@
 #![allow(unused)]
 
-use glacier::prelude::*;
-use std::{fmt::Debug, fs::File, slice::from_raw_parts, thread};
+use glacier::prelude::{FilterExt, *};
+use http::Method;
+use std::{
+    collections::HashSet, fmt::Debug, fs::File, future::Future, slice::from_raw_parts,
+    sync::LazyLock, thread,
+};
 
-async fn handle_error<E: Debug>(res: std::result::Result<HttpResponse, E>) -> HttpResponse {
-    res.unwrap()
+fn rate_limit(mut req: HttpRequest, limit: usize) -> Result<HttpRequest, u16> {
+    if req.counter() < limit {
+        Ok(req)
+    } else {
+        Err(0)
+    }
 }
 
-async fn handle_404(mut req: Request<RecvStream>) -> std::result::Result<HttpResponse, ()> {
-    Ok(HttpResponse::Ok().body(TEXT_PLAIN, "404"))
+async fn middle(mut req: HttpRequest) -> Result<HttpRequest, u16> {
+    Ok(req)
 }
 
-#[glacier(POST, "/")]
-async fn hello(mut req: Request<RecvStream>) -> std::result::Result<HttpResponse, ()> {
-    let data = req.body_mut().data().await;
-
-    let res = HttpResponse::Ok().body(TEXT_PLAIN, "Hello, World!");
-
-    Ok(res)
+async fn hello(mut req: HttpRequest) -> Result<HttpResponse, u16> {
+    Ok(HttpResponse::Ok())
 }
 
-// TODO 改成这种形式：
-// async fn router(req: Request<Body>) -> Result<Response<Body>, Infallible> {
-//     match req.uri().path() {
-//         "/" => [ip_middle, home],
-//         "/user" => [user],
-//         _ => [404],
-//     }
-// }
+async fn router(mut req: HttpRequest) -> HttpResponse {
+    let res = match req.req.uri().path() {
+        "/" => glacier!([middle, hello]),
+        // "/user" => Ok(req).filter(middle).map(hello),
+        "/user" => {
+            let a = Ok(req)
+                .filter(|req| rate_limit(req, 10))
+                .async_filter(|req| middle(req))
+                .await
+                .async_map(|x| hello(x))
+                .await
+                .unwrap();
+            a
+        }
+        _ => todo!(),
+    };
 
-#[main]
+    todo!()
+}
+
+#[tokio::main]
 async fn main() {
-    let glacier = GlacierBuilder::bind(443)
-        // .tls()
-        // .log("debug", None)
-        // .register_dir("/public")
-        .server(routes)
+    let glacier = GlacierBuilder::bind(("0.0.0.0", 443))
+        .tls(
+            "/home/aksjfds/codes/mystu_server/cert.pem",
+            "/home/aksjfds/codes/mystu_server/key.pem",
+        )
+        .server(router)
         .build()
         .await;
 
     glacier.run().await.unwrap();
+
+    thread::park();
 }

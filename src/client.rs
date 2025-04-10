@@ -1,7 +1,9 @@
+use std::sync::Arc;
 use std::{future::Future, net::IpAddr};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
 
+use crate::prelude::{GlobalVal, HttpRequest};
 use crate::Result;
 use crate::{prelude::HttpResponse, Routes};
 //
@@ -12,7 +14,6 @@ use crate::{prelude::HttpResponse, Routes};
 //
 //
 
-// pub struct Glacier<T> {
 pub struct Glacier<T> {
     pub(crate) listener: TcpListener,
     pub(crate) routes: Routes<T>,
@@ -62,26 +63,30 @@ where
     async fn handle_connection(
         stream: tokio_rustls::server::TlsStream<TcpStream>,
         routes: Routes<T>,
-        _addr: IpAddr,
+        addr: IpAddr,
     ) -> Result<()> {
         let mut h2_conn = h2::server::handshake(stream).await.unwrap();
 
+        let global_val = Arc::new(GlobalVal::new());
         while let Some(Ok((req, mut responder))) = h2_conn.accept().await {
-            let res = routes(req).await;
+            let req = HttpRequest::new(req, addr, global_val.clone());
 
-            match res.data {
-                Some(data) => responder
-                    .send_response(res.builder.body(()).unwrap(), false)
-                    .unwrap()
-                    .send_data(data, true)
-                    .unwrap(),
+            tokio::spawn(async move {
+                let res = routes(req).await;
+                match res.data {
+                    Some(data) => responder
+                        .send_response(res.builder.body(()).unwrap(), false)
+                        .unwrap()
+                        .send_data(data, true)
+                        .unwrap(),
 
-                None => {
-                    responder
-                        .send_response(res.builder.body(()).unwrap(), true)
-                        .unwrap();
+                    None => {
+                        responder
+                            .send_response(res.builder.body(()).unwrap(), true)
+                            .unwrap();
+                    }
                 }
-            }
+            });
         }
 
         Ok(())

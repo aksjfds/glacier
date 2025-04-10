@@ -7,7 +7,7 @@ use crate::prelude::{APPLICATION_JSON, TEXT_HTML, TEXT_PLAIN};
 // 标志
 pub struct HttpResponse {
     pub(crate) builder: http::response::Builder,
-    pub(crate) data: Option<Bytes>,
+    pub data: Option<Bytes>,
 }
 
 impl HttpResponse {
@@ -66,6 +66,11 @@ impl HttpResponse {
     {
         self.builder = self.builder.header(CONTENT_TYPE, content_type);
 
+        self.data = Some(data.into());
+        self
+    }
+
+    pub fn easy_body(mut self, data: impl Into<Bytes>) -> Self {
         self.data = Some(data.into());
         self
     }
