@@ -28,19 +28,23 @@ async fn router(mut req: HttpRequest) -> HttpResponse {
         "/" => glacier!([middle, hello]),
         // "/user" => Ok(req).filter(middle).map(hello),
         "/user" => {
-            let a = Ok(req)
+            let a = req
                 .filter(|req| rate_limit(req, 10))
+                .unwrap()
                 .async_filter(|req| middle(req))
                 .await
-                .async_map(|x| hello(x))
-                .await
-                .unwrap();
+                .unwrap()
+                .async_apply(|x| hello(x))
+                .await;
             a
         }
         _ => todo!(),
     };
 
-    todo!()
+    match res {
+        Ok(res) => res,
+        Err(_) => HttpResponse::Ok(),
+    }
 }
 
 #[tokio::main]

@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU64, AtomicU8};
 pub use crate::config::GlacierBuilder;
 pub use crate::request::HttpRequest;
 pub use crate::request_ext::*;
+pub use crate::result_ext::*;
 pub use crate::response::HttpResponse;
 pub use glacier_macro::glacier;
 pub use http::header::*;
