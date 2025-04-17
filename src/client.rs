@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::{future::Future, net::IpAddr};
 use tokio::net::{TcpListener, TcpStream};
+use tokio_rustls::TlsAcceptor;
 
 use crate::prelude::{GlobalVal, HttpRequest};
 use crate::Result;
@@ -16,6 +17,7 @@ use crate::{prelude::HttpResponse, Routes};
 pub struct Glacier<T> {
     pub(crate) listener: TcpListener,
     pub(crate) routes: Routes<T>,
+    pub(crate) acceptor: TlsAcceptor,
 }
 
 impl<T> Glacier<T>
@@ -30,12 +32,17 @@ where
     /// ```
     pub async fn run(self) -> Result<()> {
         let listener = self.listener;
-        // let acceptor = self.acceptor;
+        let acceptor = self.acceptor;
         let routes = self.routes;
         let srv = async move {
             loop {
                 match listener.accept().await {
                     Ok((stream, addr)) => {
+                        let acceptor = acceptor.clone();
+                        let stream = match acceptor.accept(stream).await {
+                            Ok(stream) => stream,
+                            Err(_) => continue,
+                        };
 
                         tokio::spawn(async move {
                             Glacier::handle_connection(stream, routes, addr.ip())
@@ -54,7 +61,7 @@ where
     }
 
     async fn handle_connection(
-        stream: TcpStream,
+        stream: tokio_rustls::server::TlsStream<TcpStream>,
         routes: Routes<T>,
         addr: IpAddr,
     ) -> Result<()> {
