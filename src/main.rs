@@ -29,7 +29,7 @@ async fn router(mut req: HttpRequest) -> HttpResponse {
         // "/user" => Ok(req).filter(middle).map(hello),
         "/user" => {
             let a = req
-                .filter(|req| rate_limit(req, 10))
+                .filter_with(|req| rate_limit(req, 10))
                 .unwrap()
                 .async_filter(|req| middle(req))
                 .await

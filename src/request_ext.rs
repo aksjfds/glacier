@@ -4,10 +4,10 @@ use std::future::Future;
 use crate::prelude::{HttpRequest, HttpResponse};
 
 pub trait FilterExt<E> {
-    fn filter(self, f: impl Fn(HttpRequest) -> Result<HttpRequest, E>) -> Result<HttpRequest, E>;
+    fn filter_with(self, f: impl Fn(HttpRequest) -> Result<HttpRequest, E>) -> Result<HttpRequest, E>;
 }
 impl<E> FilterExt<E> for HttpRequest {
-    fn filter(self, f: impl Fn(HttpRequest) -> Result<HttpRequest, E>) -> Result<HttpRequest, E> {
+    fn filter_with(self, f: impl Fn(HttpRequest) -> Result<HttpRequest, E>) -> Result<HttpRequest, E> {
         f(self)
     }
 }
