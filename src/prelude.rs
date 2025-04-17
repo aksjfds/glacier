@@ -5,7 +5,6 @@ pub use crate::request::HttpRequest;
 pub use crate::request_ext::*;
 pub use crate::result_ext::*;
 pub use crate::response::HttpResponse;
-pub use glacier_macro::glacier;
 pub use http::header::*;
 
 pub const TEXT_PLAIN: HeaderValue = HeaderValue::from_static("text/plain; charset=UTF-8");

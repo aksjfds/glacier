@@ -94,14 +94,3 @@ impl From<tokio::time::error::Elapsed> for GlacierError {
         GlacierError::BoxErr(Box::new(value))
     }
 }
-
-impl From<rustls::pki_types::pem::Error> for GlacierError {
-    fn from(value: rustls::pki_types::pem::Error) -> Self {
-        GlacierError::BoxErr(Box::new(value))
-    }
-}
-impl From<rustls::Error> for GlacierError {
-    fn from(value: rustls::Error) -> Self {
-        GlacierError::BoxErr(Box::new(value))
-    }
-}

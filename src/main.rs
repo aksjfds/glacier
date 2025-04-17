@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use glacier::prelude::{FilterExt, *};
+use glacier::prelude::*;
 use http::Method;
 use std::{
     collections::HashSet, fmt::Debug, fs::File, future::Future, slice::from_raw_parts,
@@ -25,7 +25,6 @@ async fn hello(mut req: HttpRequest) -> Result<HttpResponse, u16> {
 
 async fn router(mut req: HttpRequest) -> HttpResponse {
     let res = match req.req.uri().path() {
-        "/" => glacier!([middle, hello]),
         // "/user" => Ok(req).filter(middle).map(hello),
         "/user" => {
             let a = req
@@ -50,10 +49,6 @@ async fn router(mut req: HttpRequest) -> HttpResponse {
 #[tokio::main]
 async fn main() {
     let glacier = GlacierBuilder::bind(("0.0.0.0", 443))
-        .tls(
-            "/home/aksjfds/codes/mystu_server/cert.pem",
-            "/home/aksjfds/codes/mystu_server/key.pem",
-        )
         .server(router)
         .build()
         .await;
