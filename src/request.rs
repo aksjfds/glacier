@@ -1,5 +1,3 @@
-use std::ops::{Deref, DerefMut};
-
 use crate::handler::HandleReq;
 use crate::prelude::HyperRequest;
 use crate::response::Response;
@@ -36,7 +34,20 @@ impl Request {
     }
 }
 
-impl Deref for Request {
+impl Request {
+    pub fn param<'b, P>(&'b self) -> Option<P>
+    where
+        P: serde::Deserialize<'b>,
+    {
+        self.hyper_request
+            .uri()
+            .query()
+            .map(serde_qs::from_str)?
+            .ok()
+    }
+}
+
+impl std::ops::Deref for Request {
     type Target = HyperRequest;
 
     fn deref(&self) -> &Self::Target {
@@ -44,7 +55,7 @@ impl Deref for Request {
     }
 }
 
-impl DerefMut for Request {
+impl std::ops::DerefMut for Request {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.hyper_request
     }

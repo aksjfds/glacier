@@ -28,8 +28,19 @@ impl Response {
         self
     }
 
-    pub fn body(mut self, body: impl Into<http_body_util::Full<hyper::body::Bytes>>) -> Self {
+    pub fn body(mut self, body: impl Into<Full<Bytes>>) -> Self {
         self.body = Some(body.into());
+        self
+    }
+
+    pub fn json(mut self, data: impl serde::Serialize) -> Self {
+        use hyper::header::CONTENT_TYPE;
+
+        self.builder = self
+            .builder
+            .header(CONTENT_TYPE, "application/json; charset=UTF-8");
+        self.body = serde_json::to_vec(&data).map(Into::into).ok();
+
         self
     }
 }
