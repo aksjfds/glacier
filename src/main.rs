@@ -19,12 +19,9 @@ async fn router(req: HyperRequest) -> Result<HyperResponse, String> {
         _ => req.async_map(Hello).await,
     };
 
-    let res = res.map(|res| res.header("global_key", "global_value"));
-
-    match res {
-        Ok(res) => res.try_into().map_err(|_e| String::new()),
-        Err(e) => Err(e),
-    }
+    res.map(|res| res.header("global_key", "global_value"))?
+        .try_into()
+        .map_err(|_e| String::new())
 }
 
 #[tokio::main]
@@ -36,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use tokio::net::TcpListener;
 
     // 设置服务器监听地址
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], 443));
     let listener = TcpListener::bind(addr).await?;
 
     loop {

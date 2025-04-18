@@ -1,9 +1,8 @@
 use std::ops::{Deref, DerefMut};
 
-use crate::{
-    handler::HandleReq,
-    prelude::HyperRequest, response::Response,
-};
+use crate::handler::HandleReq;
+use crate::prelude::HyperRequest;
+use crate::response::Response;
 
 pub struct Request {
     hyper_request: HyperRequest,

@@ -1,15 +1,14 @@
+use http_body_util::Full;
+use hyper::body::Bytes;
+
 use crate::prelude::HyperResponse;
 
 pub struct Response {
     builder: hyper::http::response::Builder,
-    body: Option<http_body_util::Full<hyper::body::Bytes>>,
+    body: Option<Full<Bytes>>,
 }
 
 impl Response {
-    pub fn new(body: impl Into<http_body_util::Full<hyper::body::Bytes>>) -> HyperResponse {
-        hyper::Response::new(body.into())
-    }
-
     #[allow(non_snake_case)]
     pub fn Ok() -> Self {
         Self {
