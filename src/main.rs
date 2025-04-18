@@ -1,92 +1,58 @@
-#![allow(unused)]
+use glacier::handler::HandleReq;
+use glacier::prelude::{HyperRequest, HyperResponse};
+use glacier::request::Request;
+use glacier::response::Response;
 
-use glacier::prelude::*;
-use std::thread;
+pub struct Hello;
+impl HandleReq<String> for Hello {
+    async fn async_handle(self, _req: Request) -> Result<Response, String> {
+        let res = Response::Ok().header("key", "value").body("Hello, World!");
 
-#[glacier(GET, "/")]
-async fn basic(mut req: OneRequest) {
-    req.respond_hello().await.unwrap();
+        Ok(res)
+    }
 }
 
-#[glacier(POST, "/hello")]
-async fn hello(mut req: OneRequest) {
-    // let body = req.body().await.unwrap();
-    // println!("{:#?}", from_utf8(body));
+async fn router(req: HyperRequest) -> Result<HyperResponse, String> {
+    let req = Request::new(req);
 
-    req.respond_hello().await;
+    let res = match req.uri().path() {
+        _ => req.async_map(Hello).await,
+    };
+
+    let res = res.map(|res| res.header("global_key", "global_value"));
+
+    match res {
+        Ok(res) => res.try_into().map_err(|_e| String::new()),
+        Err(e) => Err(e),
+    }
 }
 
-#[main]
-fn main() -> Result<()> {
-    // let rt = tokio::runtime::Builder::new_multi_thread()
-    //     .enable_all()
-    //     .build()?;
-    // rt.block_on(async {
-    //     let glacier = GlacierBuilder::new()
-    //         .open_tls()
-    //         .unwrap()
-    //         .bind(443)
-    //         // .start_log("debug", None)
-    //         // .register_dir("/public")
-    //         .server(routes)
-    //         .build()
-    //         .await;
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    use glacier::io::TokioIo;
+    use hyper::server::conn::http1;
+    use hyper::service::service_fn;
+    use std::net::SocketAddr;
+    use tokio::net::TcpListener;
 
-    //     glacier.run().await.unwrap();
-    // });
+    // 设置服务器监听地址
+    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    let listener = TcpListener::bind(addr).await?;
 
-    for i in 0..16 {
-        thread::spawn(|| {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            rt.block_on(async {
-                let glacier = GlacierBuilder::new()
-                    .start_log("debug", None)
-                    // .register_dir("/public")
-                    .open_tls()
-                    .unwrap()
-                    .server(routes)
-                    .bind(443, true)
-                    .build()
-                    .await
-                    .unwrap();
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let io = TokioIo::new(stream);
 
-                glacier.run().await.unwrap();
-            });
+        tokio::task::spawn(async move {
+            if let Err(err) = http1::Builder::new()
+                .serve_connection(io, service_fn(router))
+                .await
+            {
+                eprintln!("Error serving connection: {}", err);
+            }
         });
     }
 
-    thread::park();
-    Ok(())
-}
-
-#[test]
-fn test() -> Result<()> {
-    use std::io::Write;
-    use std::net::TcpStream;
-
-    // 连接到 localhost:3000
-    let mut stream = TcpStream::connect("127.0.0.1:3000")?;
-
-    // 构造 POST 请求
-    let json_data = r#"{"name": "Rust", "message": "Hello from Rust!"}"#;
-    let request = format!(
-        "POST /hello HTTP/1.1\r\n\
-         Host: localhost\r\n\
-         Content-Type: application/json\r\n\
-         Content-Length: {}\r\n\
-         Connection: close\r\n\
-         \r\n\
-         {}",
-        json_data.len(),
-        json_data
-    );
-
-    // 发送请求
-    stream.write_all(request.as_bytes())?;
-    stream.flush()?;
-
+    #[allow(unreachable_code)]
     Ok(())
 }
