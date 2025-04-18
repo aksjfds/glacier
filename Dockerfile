@@ -14,5 +14,4 @@ RUN cargo build --release
 FROM ubuntu:24.04
 WORKDIR /app
 COPY --from=builder /app/target/release/glacier /app/
-COPY ./public /app/public
 CMD ["./glacier"]
