@@ -9,12 +9,28 @@ pub struct Response {
 }
 
 impl Response {
+    pub fn new() -> Self {
+        Self {
+            builder: hyper::Response::builder(),
+            body: None,
+        }
+    }
+
     #[allow(non_snake_case)]
     pub fn Ok() -> Self {
         Self {
             builder: hyper::Response::builder().status(200),
             body: None,
         }
+    }
+
+    pub fn status<T>(mut self, code: T) -> Self
+    where
+        T: TryInto<hyper::StatusCode>,
+        <T as TryInto<hyper::StatusCode>>::Error: Into<hyper::http::Error>,
+    {
+        self.builder = self.builder.status(code);
+        self
     }
 
     pub fn header<K, V>(mut self, key: K, value: V) -> Self
