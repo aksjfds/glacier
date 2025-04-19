@@ -16,9 +16,9 @@ hyper = { version = "1.6.0", default-features = false, features = [
     "http1",
     "server",
 ] }
-tokio = { version = "1.43.0", default-features = false, features = [
-    "net",
-    "rt",
+tokio = { version = "1.44.2", default-features = false, features = [
     "macros",
+    "rt",
+    "net",
     "rt-multi-thread",
 ] }

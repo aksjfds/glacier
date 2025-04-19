@@ -58,3 +58,12 @@ impl TryFrom<Response> for HyperResponse {
         }
     }
 }
+
+impl<T> From<T> for Response
+where
+    T: serde::Serialize,
+{
+    fn from(value: T) -> Self {
+        Response::Ok().json(value)
+    }
+}
