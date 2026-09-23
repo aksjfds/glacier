@@ -48,8 +48,8 @@ async fn main() -> Result<(), BoxError> {
             if let Err(error) =
                 handle_connection(stream, peer_addr).await
             {
-                eprintln!(
-                    "[{peer_addr}] rejected: {error}"
+                println!(
+                    "[{peer_addr}] connection closed before HTTP/2 handshake: {error}"
                 );
             }
         });
