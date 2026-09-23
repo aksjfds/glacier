@@ -1,25 +1,26 @@
 use std::{
+    convert::Infallible,
     env,
     error::Error,
-    net::SocketAddr,
 };
 
 use bytes::Bytes;
-
-use h2::{
-    RecvStream,
-    server::{
-        self,
-        SendResponse,
-    },
-};
 
 use http::{
     Request,
     Response,
     StatusCode,
-    Version,
 };
+
+use http_body_util::Full;
+
+use hyper::{
+    body::Incoming,
+    server::conn::http1,
+    service::service_fn,
+};
+
+use hyper_util::rt::TokioIo;
 
 use tokio::net::{
     TcpListener,
@@ -37,19 +38,15 @@ async fn main() -> Result<(), BoxError> {
 
     let listener = TcpListener::bind(&address).await?;
 
-    println!("Glacier HTTP/2 server");
-    println!("Listening on {address}");
-    println!("HTTP/1.x is not supported");
+    println!("Glacier listening on {address}");
 
     loop {
         let (stream, peer_addr) = listener.accept().await?;
 
         tokio::spawn(async move {
-            if let Err(error) =
-                handle_connection(stream, peer_addr).await
-            {
-                println!(
-                    "[{peer_addr}] connection closed before HTTP/2 handshake: {error}"
+            if let Err(error) = handle_connection(stream).await {
+                eprintln!(
+                    "[{peer_addr}] connection error: {error}"
                 );
             }
         });
@@ -58,170 +55,118 @@ async fn main() -> Result<(), BoxError> {
 
 async fn handle_connection(
     stream: TcpStream,
-    peer_addr: SocketAddr,
 ) -> Result<(), BoxError> {
+    let io = TokioIo::new(stream);
+
     /*
-     * 严格 HTTP/2。
+     * Render Edge -> Glacier 使用 HTTP/1.1。
      *
-     * h2::server::handshake 会等待合法的
-     * HTTP/2 connection preface：
-     *
-     * PRI * HTTP/2.0\r\n
-     * \r\n
-     * SM\r\n
-     * \r\n
-     *
-     * HTTP/1.0 / HTTP/1.1 客户端不会发送这个 preface，
-     * 因而握手失败，连接被关闭。
+     * keep_alive 保持开启，因为 Render 会复用
+     * 到实例的 HTTP/1.1 connection。
      */
-    let mut connection =
-        server::handshake(stream).await?;
+    let mut builder = http1::Builder::new();
 
-    println!(
-        "[{peer_addr}] HTTP/2 connection established"
-    );
+    builder.keep_alive(true);
 
-    while let Some(result) =
-        connection.accept().await
-    {
-        match result {
-            Ok((request, respond)) => {
-                tokio::spawn(async move {
-                    if let Err(error) =
-                        handle_request(
-                            request,
-                            respond,
-                        )
-                        .await
-                    {
-                        eprintln!(
-                            "stream error: {error}"
-                        );
-                    }
-                });
-            }
-
-            Err(error) => {
-                eprintln!(
-                    "[{peer_addr}] HTTP/2 connection error: {error}"
-                );
-
-                break;
-            }
-        }
-    }
-
-    println!(
-        "[{peer_addr}] connection closed"
-    );
+    builder
+        .serve_connection(
+            io,
+            service_fn(handle_request),
+        )
+        .await?;
 
     Ok(())
 }
 
 async fn handle_request(
-    request: Request<RecvStream>,
-    mut respond: SendResponse<Bytes>,
-) -> Result<(), BoxError> {
-    /*
-     * 理论上进入这里的一定已经是 HTTP/2。
-     * 再做一次显式断言，保证框架内部约束。
-     */
-    if request.version() != Version::HTTP_2 {
-        respond.send_reset(
-            h2::Reason::PROTOCOL_ERROR,
-        );
-
-        return Ok(());
-    }
-
-    let stream_id = respond.stream_id();
-
-    let (parts, mut body) =
-        request.into_parts();
-
+    request: Request<Incoming>,
+) -> Result<Response<Full<Bytes>>, Infallible> {
     println!(
-        "[{:?}] {} {} {:?}",
-        stream_id,
-        parts.method,
-        parts.uri,
-        parts.version,
+        "{} {} {:?}",
+        request.method(),
+        request.uri(),
+        request.version(),
     );
 
-    /*
-     * 消费请求 DATA。
-     *
-     * 收到数据并处理后，把 flow-control
-     * capacity 返还给 HTTP/2 connection。
-     */
-    while let Some(result) =
-        body.data().await
-    {
-        let chunk = result?;
-
-        body.flow_control()
-            .release_capacity(chunk.len())?;
-    }
-
-    let html = format!(
-        r#"<!doctype html>
+    let response = match request.uri().path() {
+        "/" => {
+            html_response(
+                StatusCode::OK,
+                r#"<!doctype html>
 <html lang="zh-CN">
 <head>
     <meta charset="utf-8">
-    <title>Glacier HTTP/2</title>
+    <title>Glacier</title>
 </head>
+
 <body>
     <h1>Glacier</h1>
-    <p>Protocol: HTTP/2</p>
-    <p>Version: {:?}</p>
-    <p>Stream: {:?}</p>
-    <p>Method: {}</p>
-    <p>URI: {}</p>
+    <p>Running on Render.</p>
+    <p>Browser -> Render: HTTP/2</p>
+    <p>Render -> Glacier: HTTP/1.1</p>
 </body>
-</html>
-"#,
-        parts.version,
-        stream_id,
-        parts.method,
-        parts.uri,
-    );
-
-    let response_body =
-        Bytes::from(html);
-
-    let response =
-        Response::builder()
-            .status(StatusCode::OK)
-            .version(Version::HTTP_2)
-            .header(
-                "content-type",
-                "text/html; charset=utf-8",
+</html>"#,
             )
-            .header(
-                "content-length",
-                response_body.len().to_string(),
+        }
+
+        "/health" => {
+            text_response(
+                StatusCode::OK,
+                "OK",
             )
-            .header(
-                "server",
-                "glacier",
+        }
+
+        _ => {
+            text_response(
+                StatusCode::NOT_FOUND,
+                "404 Not Found",
             )
-            .body(())?;
+        }
+    };
 
-    /*
-     * HEADERS
-     */
-    let mut send_stream =
-        respond.send_response(
-            response,
-            false,
-        )?;
+    Ok(response)
+}
 
-    /*
-     * DATA + END_STREAM
-     */
-    send_stream.send_data(
-        response_body,
-        true,
-    )?;
+fn html_response(
+    status: StatusCode,
+    body: &'static str,
+) -> Response<Full<Bytes>> {
+    Response::builder()
+        .status(status)
+        .header(
+            "content-type",
+            "text/html; charset=utf-8",
+        )
+        .header(
+            "server",
+            "glacier",
+        )
+        .body(
+            Full::new(
+                Bytes::from_static(body.as_bytes()),
+            ),
+        )
+        .unwrap()
+}
 
-    Ok(())
+fn text_response(
+    status: StatusCode,
+    body: &'static str,
+) -> Response<Full<Bytes>> {
+    Response::builder()
+        .status(status)
+        .header(
+            "content-type",
+            "text/plain; charset=utf-8",
+        )
+        .header(
+            "server",
+            "glacier",
+        )
+        .body(
+            Full::new(
+                Bytes::from_static(body.as_bytes()),
+            ),
+        )
+        .unwrap()
 }
